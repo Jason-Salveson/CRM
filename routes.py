@@ -62,56 +62,110 @@ def get_user_contacts(user_id: UUID, db: Session = Depends(get_db)):
     
     return contacts
 
+@router.get("/contacts/{contact_id}")
+def get_contact_details(contact_id: UUID, db: Session = Depends(get_db)):
+    contact = db.query(models.Contact).filter(models.Contact.contact_id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found.")
+    
+    deals = db.query(models.Deal).filter(models.Deal.contact_id == contact_id).all()
+    
+    # NEW: Fetch notes ordered by newest first
+    notes = db.query(models.Note).filter(
+        models.Note.contact_id == contact_id
+    ).order_by(models.Note.created_at.desc()).all()
+    
+    return {
+        "contact": contact,
+        "deals": deals,
+        "notes": notes # Add notes to the payload
+    }
+
+@router.post("/contacts/{contact_id}/notes/", response_model=schemas.NoteResponse)
+def create_note(contact_id: UUID, note: schemas.NoteCreate, db: Session = Depends(get_db)):
+    # Verify contact exists
+    contact = db.query(models.Contact).filter(models.Contact.contact_id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found.")
+    
+    new_note = models.Note(
+        contact_id=contact_id,
+        content=note.content
+    )
+    db.add(new_note)
+    db.commit()
+    db.refresh(new_note)
+    return new_note
+
+@router.patch("/contacts/{contact_id}", response_model=schemas.ContactResponse)
+def update_contact(contact_id: UUID, contact_update: schemas.ContactUpdate, db: Session = Depends(get_db)):
+    # 1. Find the specific contact
+    contact = db.query(models.Contact).filter(models.Contact.contact_id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found.")
+    
+    # 2. Extract only the fields the user actually changed
+    update_data = contact_update.dict(exclude_unset=True)
+    
+    # 3. Apply the changes to the database model
+    for key, value in update_data.items():
+        setattr(contact, key, value)
+        
+    db.commit()
+    db.refresh(contact)
+    return contact
+
+
+
 # ==========================================
 # TAG ROUTES
 # ==========================================
-@router.post("/users/{user_id}/tags/", response_model=schemas.TagResponse)
-def create_tag(user_id: UUID, tag: schemas.TagCreate, db: Session = Depends(get_db)):
-    # 1. Security Check: Ensure the user exists
-    db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="Agent not found.")
+# 1. Fetch all unique tags for the agent (for the React dropdown)
+@router.get("/users/{user_id}/tags/", response_model=list[schemas.TagResponse])
+def get_user_tags(user_id: UUID, db: Session = Depends(get_db)):
+    return db.query(models.Tag).filter(models.Tag.user_id == user_id).all()
+
+# 2. The "Find or Create" Tag Engine
+@router.post("/contacts/{contact_id}/tags/", response_model=schemas.TagResponse)
+def add_tag_to_contact(contact_id: UUID, tag_req: schemas.TagCreate, db: Session = Depends(get_db)):
+    contact = db.query(models.Contact).filter(models.Contact.contact_id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found.")
     
-    # 2. Security Check: Prevent duplicate tags for the same agent
-    existing_tag = db.query(models.Tag).filter(
-        models.Tag.user_id == user_id, 
-        models.Tag.tag_name == tag.tag_name
+    # Check if the tag already exists for this agent (case-insensitive)
+    tag = db.query(models.Tag).filter(
+        models.Tag.tag_name.ilike(tag_req.tag_name), 
+        models.Tag.user_id == contact.user_id
     ).first()
-    if existing_tag:
-        raise HTTPException(status_code=400, detail="You already have a tag with this name.")
-
-    # 3. Save the new tag
-    new_tag = models.Tag(**tag.model_dump(), user_id=user_id)
-    db.add(new_tag)
-    db.commit()
-    db.refresh(new_tag)
     
-    return new_tag
+    # If it doesn't exist, create it
+    if not tag:
+        tag = models.Tag(
+            user_id=contact.user_id, 
+            tag_name=tag_req.tag_name,
+            color_hex=tag_req.color_hex 
+        )
+        db.add(tag)
+        db.commit()
+        db.refresh(tag)
+        
+    # Link it to the contact (if it isn't already)
+    if tag not in contact.tags:
+        contact.tags.append(tag)
+        db.commit()
+        
+    return tag
 
-# ==========================================
-# ASSIGN TAG TO CONTACT
-# ==========================================
-@router.post("/contacts/{contact_id}/tags/{tag_id}")
-def assign_tag_to_contact(contact_id: UUID, tag_id: UUID, db: Session = Depends(get_db)):
-    # 1. Fetch both the contact and the tag from the database
+# 3. Remove a tag from a contact
+@router.delete("/contacts/{contact_id}/tags/{tag_id}")
+def remove_tag_from_contact(contact_id: UUID, tag_id: UUID, db: Session = Depends(get_db)):
     contact = db.query(models.Contact).filter(models.Contact.contact_id == contact_id).first()
     tag = db.query(models.Tag).filter(models.Tag.tag_id == tag_id).first()
-
-    if not contact or not tag:
-        raise HTTPException(status_code=404, detail="Contact or Tag not found.")
-
-    # 2. Check if the tag is already attached to this contact
-    if tag in contact.tags:
-        raise HTTPException(status_code=400, detail="This tag is already assigned to this contact.")
-
-    # 3. The SQLAlchemy Magic: Append the tag to the contact's list
-    # SQLAlchemy automatically handles writing to the 'contact_tags' join table!
-    contact.tags.append(tag)
-    db.commit()
-
-    return {"status": "success", "message": f"Tag '{tag.tag_name}' successfully added to {contact.first_name}."}
-
-# Add this to the bottom of routes.py
+    
+    if contact and tag and tag in contact.tags:
+        contact.tags.remove(tag)
+        db.commit()
+    return {"status": "success"}
 
 # ==========================================
 # DEAL ROUTES

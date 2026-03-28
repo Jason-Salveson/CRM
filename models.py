@@ -76,6 +76,8 @@ class Tag(Base):
     owner = relationship("User", back_populates="tags")
     contacts = relationship("Contact", secondary=contact_tags, back_populates="tags")
 
+
+
 class Deal(Base):
     __tablename__ = "deals"
 
@@ -122,3 +124,15 @@ class Task(Base):
     owner = relationship("User")
     client = relationship("Contact")
     deal = relationship("Deal")
+
+# Add this to the bottom of models.py
+class Note(Base):
+    __tablename__ = "notes"
+
+    note_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    contact_id = Column(UUID(as_uuid=True), ForeignKey("contacts.contact_id", ondelete="CASCADE"))
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Optional: Relationship back to contact
+    contact = relationship("Contact")

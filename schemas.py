@@ -48,6 +48,13 @@ class ContactResponse(ContactBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+class ContactUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    mrea_category: Optional[str] = None
+
 # ==========================================
 # USER SCHEMAS (The Agents)
 # ==========================================
@@ -122,3 +129,15 @@ class TaskResponse(TaskBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+class NoteCreate(BaseModel):
+    content: str
+
+class NoteResponse(BaseModel):
+    note_id: UUID
+    contact_id: UUID
+    content: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

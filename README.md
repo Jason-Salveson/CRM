@@ -37,3 +37,34 @@ The Databank (Contact Directory):
 Constructed a real-time, searchable data table for rendering the contacts database.
 
 Built an interactive, blurred-background modal form for adding new contacts, featuring an Optimistic UI update that injects the new lead into the table instantly upon submission.
+
+Day 2 (Morning) Architecture Summary: The Deep Dive
+The Contact Profile Deep-Dive (Dynamic Routing):
+
+Engineered a dedicated profile view (/contacts/:id) combining React Router's useParams with a bundled SQLAlchemy backend query.
+
+Built a two-column, tabbed interface to view a client's core identity alongside their active transactions.
+
+Inline Contact Editing (The "U" in CRUD):
+
+Built a PATCH route in FastAPI to accept partial data updates (exclude_unset=True).
+
+Engineered a state-toggled UI component in React that seamlessly flips a static profile card into an editable form without a page reload.
+
+The Notes & Timeline Engine:
+
+Created a dedicated notes table in PostgreSQL with un-editable created_at timestamps for compliance tracking.
+
+Built an interactive chronological feed on the frontend for logging calls and relationship milestones.
+
+Enterprise "Find or Create" Tagging System:
+
+Mapped a Many-to-Many relationship between contacts and tags using an association table.
+
+Built an intelligent backend route that accepts a string, checks for case-insensitive duplicates, creates the tag if necessary, and links it to the contact in a single database transaction.
+
+Implemented a native HTML <datalist> on the frontend for lightweight, autocomplete tag suggestions.
+
+Native Pipeline Creation:
+
+Upgraded the Kanban board with a modular popup form that securely fetches existing contacts for dropdown selection and instantly injects new Deals into the database.
