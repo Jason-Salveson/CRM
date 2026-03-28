@@ -38,7 +38,7 @@ Constructed a real-time, searchable data table for rendering the contacts databa
 
 Built an interactive, blurred-background modal form for adding new contacts, featuring an Optimistic UI update that injects the new lead into the table instantly upon submission.
 
-Day 2 (Morning) Architecture Summary: The Deep Dive
+Day 2.1 Architecture Summary: The Deep Dive
 The Contact Profile Deep-Dive (Dynamic Routing):
 
 Engineered a dedicated profile view (/contacts/:id) combining React Router's useParams with a bundled SQLAlchemy backend query.
@@ -69,7 +69,7 @@ Native Pipeline Creation:
 
 Upgraded the Kanban board with a modular popup form that securely fetches existing contacts for dropdown selection and instantly injects new Deals into the database.
 
-Day 2 (Mid-Day) Architecture Summary: The Pipeline & Deal Engine
+Day 2.2 Architecture Summary: The Pipeline & Deal Engine
 Responsive Pipeline Refactor:
 
 Engineered a tabbed interface to separate Buyer and Seller pipelines.
@@ -91,3 +91,14 @@ Built a state-toggled form on the frontend to instantly update Financials (Commi
 Cross-Entity Navigation:
 
 Wired the application's ecosystem together by making Deals clickable directly from the Contact Profile, routing the user instantly to the Deal Deep-Dive.
+
+Day 2.3 Architecture Summary: Command Center Calendar & Automation Cleanup
+Native Dashboard Calendar: * Built a zero-dependency, pure React and Tailwind CSS grid calendar.
+
+Engineered dynamic date-mapping to visually plot active tasks onto their exact due dates directly within the Command Center.
+
+Smart Automation Context (services.py): * Upgraded the backend pipeline triggers to dynamically append the Deal name to automated tasks (e.g., "Schedule Inspection (123 Main St)"), ensuring instant identification on the dashboard.
+
+Pipeline Reversion Logic: * Engineered a self-cleaning database function that maps pipeline stages to numerical indices.
+
+If a transaction falls out of escrow and moves backward in the pipeline, the backend automatically hunts down and deletes any future incomplete tasks to prevent database bloat.

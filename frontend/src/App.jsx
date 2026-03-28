@@ -23,12 +23,14 @@ function Navbar() {
   );
 }
 
-// 2. The Updated Dashboard Component
+// 2. The Updated Dashboard Component (With Native Calendar)
 function Dashboard() {
   const [tasks, setTasks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Your actual Agent ID
+  // NEW: Calendar State
+  const [currentDate, setCurrentDate] = useState(new Date());
+
   const AGENT_ID = "7fd135a8-e667-4ae3-ab21-c289e89a3271"; 
 
   useEffect(() => {
@@ -43,85 +45,169 @@ function Dashboard() {
       });
   }, []);
 
-  // NEW: The Two-Way Toggle Function
   const handleToggleTask = (taskId, currentStatus) => {
-    // 1. Determine the exact opposite of the current status
     const newStatus = currentStatus === "True" ? "False" : "True";
-
-    // 2. Optimistic UI Update: Map through the array and instantly flip the status
-    // of the clicked task so it jumps between lists instantly.
     setTasks(currentTasks => 
       currentTasks.map(task => 
         task.task_id === taskId ? { ...task, is_completed: newStatus } : task
       )
     );
-
-    // 3. Background Sync: Send the new status as a query parameter
     axios.patch(`http://127.0.0.1:8080/tasks/${taskId}/status?is_completed=${newStatus}`)
-      .then(response => console.log(response.data.message))
       .catch(error => console.error("Database sync failed:", error));
   };
 
-  // NEW: We slice the master state into two separate arrays for rendering
   const activeTasks = tasks.filter(task => task.is_completed === "False");
   const completedTasks = tasks.filter(task => task.is_completed === "True");
 
-  return (
-    <div className="p-8">
-      <h2 className="text-3xl font-bold text-slate-800 mb-6">Good Morning, Jason.</h2>
+  // ==========================================
+  // CALENDAR MATH ENGINE
+  // ==========================================
+  const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+  const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
+  
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const prevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+  const nextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+
+  // Generates the grid cells
+  const renderCalendarDays = () => {
+    const days = [];
+    
+    // 1. Pad the beginning of the month with empty squares
+    for (let i = 0; i < firstDayOfMonth; i++) {
+      days.push(<div key={`empty-${i}`} className="bg-slate-50/50 min-h-[100px] border border-slate-100 rounded-lg"></div>);
+    }
+    
+    // 2. Render the actual days
+    for (let day = 1; day <= daysInMonth; day++) {
+      // Find all tasks due on this exact date
+      const dateStr = new Date(currentDate.getFullYear(), currentDate.getMonth(), day).toDateString();
+      const dayTasks = tasks.filter(t => t.due_date && new Date(t.due_date).toDateString() === dateStr);
       
-      {/* ACTIVE TASKS CARD */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
-        <h3 className="text-lg font-semibold border-b pb-2 mb-4">Today's Action Items</h3>
-        
-        {isLoading ? (
-          <p className="text-slate-500 italic animate-pulse">Syncing with database...</p>
-        ) : activeTasks.length === 0 ? (
-          <p className="text-emerald-600 font-medium">Inbox zero! All active tasks are completed.</p>
-        ) : (
-          <ul className="space-y-3">
-            {activeTasks.map(task => (
-              <li key={task.task_id} className="flex items-center space-x-3 p-3 hover:bg-slate-50 rounded-lg transition-colors border border-transparent hover:border-slate-100">
-                <input 
-                  type="checkbox" 
-                  checked={false}
-                  onChange={() => handleToggleTask(task.task_id, task.is_completed)}
-                  className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" 
-                />
-                <div>
-                  <p className="font-medium text-slate-800">{task.task_name}</p>
-                  <p className="text-sm text-slate-500">
-                    Due: {new Date(task.due_date).toLocaleDateString()}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      const isToday = new Date().toDateString() === dateStr;
 
-      {/* COMPLETED TASKS CARD (Only shows if there are actually completed tasks) */}
-      {completedTasks.length > 0 && (
-        <div className="bg-slate-100 rounded-xl shadow-inner border border-slate-200 p-6 opacity-75">
-          <h3 className="text-sm text-slate-500 font-semibold uppercase tracking-wider mb-4">Completed Today</h3>
-          <ul className="space-y-3">
-            {completedTasks.map(task => (
-              <li key={task.task_id} className="flex items-center space-x-3 p-3 bg-white rounded-lg border border-slate-200">
-                <input 
-                  type="checkbox" 
-                  checked={true}
-                  onChange={() => handleToggleTask(task.task_id, task.is_completed)}
-                  className="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer" 
-                />
-                <div>
-                  <p className="font-medium text-slate-500 line-through">{task.task_name}</p>
-                </div>
-              </li>
+      days.push(
+        <div key={day} className={`bg-white p-2 min-h-[120px] border rounded-lg flex flex-col transition-colors hover:border-blue-300 ${isToday ? 'border-blue-400 shadow-sm ring-1 ring-blue-400' : 'border-slate-200'}`}>
+          <span className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full mb-2 ${isToday ? 'bg-blue-600 text-white' : 'text-slate-700'}`}>
+            {day}
+          </span>
+          <div className="flex-1 space-y-1 overflow-y-auto pr-1 custom-scrollbar">
+            {dayTasks.map(task => (
+              <div 
+                key={task.task_id} 
+                title={task.task_name}
+                className={`text-[10px] px-1.5 py-1 rounded truncate cursor-default font-medium border ${
+                  task.is_completed === 'True' 
+                    ? 'bg-slate-50 border-slate-200 text-slate-400 line-through' 
+                    : 'bg-blue-50 border-blue-100 text-blue-700'
+                }`} 
+              >
+                {task.task_name}
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
-      )}
+      );
+    }
+    return days;
+  };
 
+  return (
+    <div className="p-8 max-w-7xl mx-auto">
+      <h2 className="text-3xl font-bold text-slate-800 mb-8">Good Morning, Jason.</h2>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* LEFT COLUMN: The Task Lists */}
+        <div className="lg:col-span-1 space-y-6">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <h3 className="text-lg font-semibold border-b pb-2 mb-4 text-slate-800">Active Action Items</h3>
+            
+            {isLoading ? (
+              <p className="text-slate-500 italic animate-pulse text-sm">Syncing with database...</p>
+            ) : activeTasks.length === 0 ? (
+              <p className="text-emerald-600 font-medium text-sm bg-emerald-50 p-3 rounded-lg border border-emerald-100">Inbox zero! All active tasks are completed.</p>
+            ) : (
+              <ul className="space-y-3">
+                {activeTasks.map(task => (
+                  <li key={task.task_id} className="flex items-start space-x-3 p-3 bg-slate-50 rounded-lg hover:bg-blue-50 transition-colors border border-slate-100 hover:border-blue-200 group">
+                    <input 
+                      type="checkbox" 
+                      checked={false}
+                      onChange={() => handleToggleTask(task.task_id, task.is_completed)}
+                      className="mt-1 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" 
+                    />
+                    <div>
+                      <p className="font-medium text-slate-800 text-sm leading-snug group-hover:text-blue-900 transition-colors">{task.task_name}</p>
+                      <p className="text-xs text-slate-500 mt-1 font-medium">
+                        Due: {new Date(task.due_date).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {completedTasks.length > 0 && (
+            <div className="bg-slate-100/50 rounded-xl border border-slate-200 p-6">
+              <h3 className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-4">Completed</h3>
+              <ul className="space-y-2">
+                {completedTasks.map(task => (
+                  <li key={task.task_id} className="flex items-center space-x-3 p-2 opacity-60 hover:opacity-100 transition-opacity">
+                    <input 
+                      type="checkbox" 
+                      checked={true}
+                      onChange={() => handleToggleTask(task.task_id, task.is_completed)}
+                      className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer" 
+                    />
+                    <p className="text-sm font-medium text-slate-600 line-through truncate">{task.task_name}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT COLUMN: The Native Calendar */}
+        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
+          
+          {/* Calendar Header Controls */}
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold text-slate-800">
+              {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+            </h3>
+            <div className="flex space-x-2">
+              <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors">
+                ← Prev
+              </button>
+              <button onClick={() => setCurrentDate(new Date())} className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-sm transition-colors">
+                Today
+              </button>
+              <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors">
+                Next →
+              </button>
+            </div>
+          </div>
+
+          {/* Days of the Week Row */}
+          <div className="grid grid-cols-7 gap-2 mb-2">
+            {daysOfWeek.map(day => (
+              <div key={day} className="text-center text-xs font-bold text-slate-400 uppercase tracking-wider py-2">
+                {day}
+              </div>
+            ))}
+          </div>
+
+          {/* The Calendar Grid */}
+          <div className="grid grid-cols-7 gap-2 flex-1">
+            {renderCalendarDays()}
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 }
