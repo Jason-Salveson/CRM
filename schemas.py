@@ -100,6 +100,15 @@ class DealResponse(DealBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+class DealUpdate(BaseModel):
+    deal_name: Optional[str] = None
+    deal_type: Optional[str] = Field(default=None, pattern="^(Buyer|Seller|Lease)$")
+    stage: Optional[str] = Field(default=None, pattern="^(Lead|Contact|Appointment|Active|Under Contract|Closed)$")
+    property_address: Optional[str] = None
+    estimated_value: Optional[str] = None
+    commission_rate: Optional[str] = None
+    expected_close_date: Optional[datetime] = None
     
 class DealStageUpdate(BaseModel):
     new_stage: str = Field(..., pattern="^(Lead|Contact|Appointment|Active|Under Contract|Closed)$")

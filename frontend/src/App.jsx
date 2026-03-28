@@ -126,13 +126,16 @@ function Dashboard() {
   );
 }
 
-// 3. The Kanban Pipeline Component
+// 3. The Kanban Pipeline Component (Upgraded for Split & Fit)
 function Pipeline() {
   const [deals, setDeals] = useState([]);
-  const [contacts, setContacts] = useState([]); // NEW: To populate our dropdown
+  const [contacts, setContacts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
   
-  // NEW: Modal State
+  // NEW: Pipeline Tab State
+  const [activeTab, setActiveTab] = useState('Buyer');
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     deal_name: '',
@@ -142,12 +145,9 @@ function Pipeline() {
   });
 
   const COLUMNS = ['Lead', 'Contact', 'Appointment', 'Active', 'Under Contract', 'Closed'];
-  
-  // ---> CHANGE THIS TO YOUR ACTUAL AGENT ID <---
   const AGENT_ID = "7fd135a8-e667-4ae3-ab21-c289e89a3271"; 
 
   useEffect(() => {
-    // NEW: Fetch both Deals AND Contacts at the exact same time
     const fetchDeals = axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/deals/`);
     const fetchContacts = axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/contacts/`);
 
@@ -178,19 +178,22 @@ function Pipeline() {
       .catch(error => console.error("Pipeline sync failed:", error));
   };
 
-  // NEW: The Deal Creation Function
   const handleCreateDeal = (e) => {
     e.preventDefault();
     if (!formData.contact_id) return alert("Please select a client for this deal.");
 
     axios.post(`http://127.0.0.1:8080/contacts/${formData.contact_id}/deals/`, formData)
       .then(response => {
-        setDeals([...deals, response.data]); // Optimistic UI update
-        setIsModalOpen(false); // Close modal
-        setFormData({ deal_name: '', contact_id: '', deal_type: 'Buyer', stage: 'Lead' }); // Reset
+        setDeals([...deals, response.data]); 
+        setIsModalOpen(false); 
+        // Reset form, but keep the deal_type aligned with whatever tab we are currently viewing
+        setFormData({ deal_name: '', contact_id: '', deal_type: activeTab, stage: 'Lead' }); 
       })
       .catch(error => console.error("Error creating deal:", error));
   };
+
+  // NEW: Pre-filter the deals so the board only renders the active tab's transactions
+  const visibleDeals = deals.filter(deal => deal.deal_type === activeTab);
 
   if (isLoading) return <div className="p-8 text-slate-500 animate-pulse">Loading Pipeline...</div>;
 
@@ -200,27 +203,49 @@ function Pipeline() {
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-3xl font-bold text-slate-800">Opportunity Pipeline</h2>
         <button 
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            setFormData({...formData, deal_type: activeTab}); // Auto-set the dropdown to the current tab
+            setIsModalOpen(true);
+          }}
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
         >
           + New Deal
         </button>
       </div>
+
+      {/* NEW: The Tabbed Interface */}
+      <div className="flex space-x-1 border-b border-slate-200 mb-6">
+        <button 
+          onClick={() => setActiveTab('Buyer')}
+          className={`px-6 py-3 text-sm font-bold transition-colors ${activeTab === 'Buyer' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+          Buyer Pipeline
+        </button>
+        <button 
+          onClick={() => setActiveTab('Seller')}
+          className={`px-6 py-3 text-sm font-bold transition-colors ${activeTab === 'Seller' ? 'border-b-2 border-emerald-600 text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+          Seller Pipeline
+        </button>
+      </div>
       
-      {/* The Kanban Board */}
+      {/* The Kanban Board (Upgraded CSS for dynamic squeezing) */}
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="flex space-x-4 h-full items-start overflow-x-auto pb-4">
+        {/* Removed overflow-x-auto, changed width to w-full */}
+        <div className="flex w-full space-x-4 h-full items-start pb-4">
           {COLUMNS.map(stageName => {
-            const columnDeals = deals.filter(deal => deal.stage === stageName);
+            const columnDeals = visibleDeals.filter(deal => deal.stage === stageName);
             return (
-              <div key={stageName} className="bg-slate-200/50 rounded-xl p-4 w-80 flex-shrink-0 min-h-[500px] border border-slate-200">
-                <h3 className="font-bold text-slate-700 mb-4 uppercase tracking-wider text-sm flex justify-between">
-                  {stageName} 
-                  <span className="bg-slate-300 text-slate-700 px-2 py-0.5 rounded-full text-xs">{columnDeals.length}</span>
+              /* Magic CSS: flex-1 makes them share space equally. min-w-0 prevents content from forcing a wider column */
+              <div key={stageName} className="bg-slate-200/50 rounded-xl p-3 flex-1 min-w-0 flex flex-col min-h-[500px] border border-slate-200">
+                <h3 className="font-bold text-slate-700 mb-4 uppercase tracking-wider text-xs flex justify-between items-center">
+                  <span className="truncate pr-2">{stageName}</span>
+                  <span className="bg-slate-300 text-slate-700 px-2 py-0.5 rounded-full text-[10px]">{columnDeals.length}</span>
                 </h3>
+                
                 <Droppable droppableId={stageName}>
                   {(provided) => (
-                    <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-3 min-h-[100px]">
+                    <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-3 flex-1 min-h-[100px]">
                       {columnDeals.map((deal, index) => (
                         <Draggable key={deal.deal_id} draggableId={deal.deal_id} index={index}>
                           {(provided, snapshot) => (
@@ -228,11 +253,13 @@ function Pipeline() {
                               ref={provided.innerRef}
                               {...provided.draggableProps}
                               {...provided.dragHandleProps}
-                              className={`bg-white p-4 rounded-lg shadow-sm border ${snapshot.isDragging ? 'border-blue-500 shadow-lg scale-105' : 'border-slate-200 hover:border-blue-300'} transition-all`}
+                              onClick={() => navigate(`/deals/${deal.deal_id}`)} // <-- ADD THIS LINE
+                              className={`bg-white p-3 rounded-lg shadow-sm border cursor-pointer ${snapshot.isDragging ? 'border-blue-500 shadow-lg scale-105 relative z-50' : 'border-slate-200 hover:border-blue-300'} transition-all`}
                             >
-                              <p className="font-bold text-slate-800">{deal.deal_name}</p>
-                              <div className="flex justify-between items-center mt-3 text-sm">
-                                <span className={`px-2 py-1 rounded-md font-medium ${deal.deal_type === 'Buyer' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                              {/* truncate prevents long addresses from breaking the card layout */}
+                              <p className="font-bold text-slate-800 text-sm truncate" title={deal.deal_name}>{deal.deal_name}</p>
+                              <div className="flex justify-between items-center mt-3">
+                                <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${deal.deal_type === 'Buyer' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
                                   {deal.deal_type}
                                 </span>
                               </div>
@@ -250,7 +277,7 @@ function Pipeline() {
         </div>
       </DragDropContext>
 
-      {/* NEW: The Create Deal Modal */}
+      {/* The Create Deal Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 border border-slate-200">
@@ -280,6 +307,7 @@ function Pipeline() {
                   <select value={formData.deal_type} onChange={(e) => setFormData({...formData, deal_type: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
                     <option value="Buyer">Buyer</option>
                     <option value="Seller">Seller</option>
+                    <option value="Lease">Lease</option>
                   </select>
                 </div>
                 <div>
@@ -318,6 +346,7 @@ function ContactProfile() {
   const [newNoteContent, setNewNoteContent] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState({});
+  const navigate = useNavigate();
 
   // NEW: Tagging State
   const [allTags, setAllTags] = useState([]);
@@ -546,9 +575,13 @@ function ContactProfile() {
                   <p className="text-slate-500 italic">No active deals for this contact.</p>
                 ) : (
                   deals.map(deal => (
-                    <div key={deal.deal_id} className="p-4 border border-slate-200 rounded-lg hover:border-blue-300 transition-colors bg-slate-50 flex justify-between items-center">
+                    <div 
+                      key={deal.deal_id} 
+                      onClick={() => navigate(`/deals/${deal.deal_id}`)}
+                      className="p-4 border border-slate-200 rounded-lg hover:border-blue-300 transition-colors bg-slate-50 flex justify-between items-center cursor-pointer"
+                    >
                       <div>
-                        <p className="font-bold text-slate-800">{deal.deal_name}</p>
+                        <p className="font-bold text-slate-800 hover:text-blue-600 transition-colors">{deal.deal_name}</p>
                         <p className="text-sm text-slate-500">{deal.stage}</p>
                       </div>
                       <span className={`px-3 py-1 rounded-md text-xs font-bold uppercase ${deal.deal_type === 'Buyer' ? 'bg-blue-200 text-blue-800' : 'bg-emerald-200 text-emerald-800'}`}>
@@ -612,46 +645,59 @@ function Contacts() {
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
 
+  // NEW: State for our Master Tag List and the currently selected filter
+  const [allTags, setAllTags] = useState([]);
+  const [selectedTag, setSelectedTag] = useState("");
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
     email: '',
     phone: '',
-    mrea_category: "Haven't Met" // Our default database constraint
+    mrea_category: "Haven't Met" 
   });
 
-  // ---> CHANGE THIS TO YOUR ACTUAL AGENT ID <---
   const AGENT_ID = "7fd135a8-e667-4ae3-ab21-c289e89a3271"; 
 
   useEffect(() => {
-    axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/contacts/`)
-      .then(response => {
-        setContacts(response.data);
+    // NEW: Fetch both Contacts and Master Tags simultaneously
+    const fetchContacts = axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/contacts/`);
+    const fetchTags = axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/tags/`);
+
+    Promise.all([fetchContacts, fetchTags])
+      .then(responses => {
+        setContacts(responses[0].data);
+        setAllTags(responses[1].data);
         setIsLoading(false);
       })
       .catch(error => {
-        console.error("Error fetching contacts:", error);
+        console.error("Error fetching databank data:", error);
         setIsLoading(false);
       });
   }, []);
 
-  // This instantly filters the table as you type in the search bar
+  // NEW: The upgraded multi-filter engine
   const filteredContacts = contacts.filter(contact => {
+    // 1. Text Search Match
     const fullName = `${contact.first_name} ${contact.last_name || ''}`.toLowerCase();
-    return fullName.includes(searchTerm.toLowerCase()) || 
-           (contact.email && contact.email.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesText = fullName.includes(searchTerm.toLowerCase()) || 
+                        (contact.email && contact.email.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    // 2. Tag Match (If no tag is selected, everyone passes. Otherwise, check their tags array)
+    const matchesTag = selectedTag === "" ? true : 
+                       (contact.tags && contact.tags.some(t => t.tag_name === selectedTag));
+
+    // A contact only shows up if they pass BOTH tests
+    return matchesText && matchesTag;
   });
 
   const handleCreateContact = (e) => {
-    e.preventDefault(); // Prevents the browser from reloading the page
+    e.preventDefault(); 
     
     axios.post(`http://127.0.0.1:8080/users/${AGENT_ID}/contacts/`, formData)
       .then(response => {
-        // 1. Optimistic UI Update: Instantly add the new contact to our table
         setContacts([...contacts, response.data]);
-        
-        // 2. Close the modal and wipe the form clean for next time
         setIsModalOpen(false);
         setFormData({ first_name: '', last_name: '', email: '', phone: '', mrea_category: "Haven't Met" });
       })
@@ -676,15 +722,27 @@ function Contacts() {
       {/* The White Table Card */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         
-        {/* Search Bar Bar */}
-        <div className="p-4 border-b border-slate-200 bg-slate-50">
+        {/* NEW: Upgraded Search & Filter Bar */}
+        <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row gap-4">
           <input
             type="text"
             placeholder="Search by name or email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full md:w-1/3 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
           />
+          <select 
+            value={selectedTag} 
+            onChange={(e) => setSelectedTag(e.target.value)}
+            className="w-full md:w-64 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+          >
+            <option value="">All Tags</option>
+            {allTags.map(tag => (
+              <option key={tag.tag_id} value={tag.tag_name}>
+                {tag.tag_name}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* The Table Data */}
@@ -704,7 +762,7 @@ function Contacts() {
               <tbody className="divide-y divide-slate-100">
                 {filteredContacts.length === 0 ? (
                   <tr>
-                    <td colSpan="4" className="p-8 text-center text-slate-500">No contacts found.</td>
+                    <td colSpan="4" className="p-8 text-center text-slate-500">No contacts found matching criteria.</td>
                   </tr>
                 ) : (
                   filteredContacts.map(contact => (
@@ -747,13 +805,14 @@ function Contacts() {
         )}
       </div>
       
-      {/* NEW: The Create Contact Modal */}
+      {/* ... (Keep your Create Contact Modal code exactly the same down here) ... */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 border border-slate-200">
             <h3 className="text-xl font-bold text-slate-800 mb-4">Add New Contact</h3>
             
             <form onSubmit={handleCreateContact} className="space-y-4">
+              {/* Form content remains the same */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">First Name *</label>
@@ -795,7 +854,241 @@ function Contacts() {
           </div>
         </div>
       )}
-    </div> // <-- This is the closing div of your Contacts component
+    </div>
+  );
+}
+
+// 6. The Deal Profile (Deep Dive) Component
+function DealProfile() {
+  const { id } = useParams();
+  const [data, setData] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // NEW: State for editing the deal
+  const [isEditing, setIsEditing] = useState(false);
+  const [editFormData, setEditFormData] = useState({});
+
+  useEffect(() => {
+    axios.get(`http://127.0.0.1:8080/deals/${id}`)
+      .then(response => {
+        setData(response.data);
+        setIsLoading(false);
+      })
+      .catch(error => {
+        console.error("Error fetching deal details:", error);
+        setIsLoading(false);
+      });
+  }, [id]);
+
+  const handleToggleTask = (taskId, currentStatus) => {
+    const newStatus = currentStatus === "True" ? "False" : "True";
+    setData(prevData => ({
+      ...prevData,
+      tasks: prevData.tasks.map(task => 
+        task.task_id === taskId ? { ...task, is_completed: newStatus } : task
+      )
+    }));
+    axios.patch(`http://127.0.0.1:8080/tasks/${taskId}/status?is_completed=${newStatus}`)
+      .catch(error => console.error("Database sync failed:", error));
+  };
+
+  // NEW: Handle Edit Button Click
+  const handleEditClick = () => {
+    setEditFormData({
+      deal_name: data.deal.deal_name || '',
+      estimated_value: data.deal.estimated_value || '',
+      commission_rate: data.deal.commission_rate || '',
+      expected_close_date: data.deal.expected_close_date ? new Date(data.deal.expected_close_date).toISOString().split('T')[0] : ''
+    });
+    setIsEditing(true);
+  };
+
+  // NEW: Save the Deal Updates
+  const handleUpdateDeal = (e) => {
+    e.preventDefault();
+    
+    // Convert empty date string to null for the database
+    const submissionData = { ...editFormData };
+    if (submissionData.expected_close_date === '') {
+      submissionData.expected_close_date = null;
+    }
+
+    axios.patch(`http://127.0.0.1:8080/deals/${id}`, submissionData)
+      .then(response => {
+        setData({ ...data, deal: response.data });
+        setIsEditing(false);
+      })
+      .catch(error => console.error("Error updating deal:", error));
+  };
+
+  if (isLoading) return <div className="p-8 text-slate-500 animate-pulse">Loading Deal File...</div>;
+  if (!data || !data.deal) return <div className="p-8 text-red-500">Deal not found.</div>;
+
+  const { deal, contact, tasks } = data;
+  const activeTasks = tasks.filter(t => t.is_completed === "False");
+  const completedTasks = tasks.filter(t => t.is_completed === "True");
+
+  return (
+    <div className="p-8 max-w-7xl mx-auto">
+      <Link to="/pipeline" className="text-blue-600 hover:text-blue-800 font-medium text-sm flex items-center mb-6 transition-colors">
+        ← Back to Pipeline
+      </Link>
+
+      <div className="flex justify-between items-start mb-6">
+        <div>
+          <h2 className="text-3xl font-bold text-slate-800">{deal.deal_name}</h2>
+          <div className="flex space-x-3 mt-2">
+            <span className={`px-3 py-1 rounded-md text-xs font-bold uppercase ${deal.deal_type === 'Buyer' ? 'bg-blue-200 text-blue-800' : 'bg-emerald-200 text-emerald-800'}`}>
+              {deal.deal_type}
+            </span>
+            <span className="px-3 py-1 rounded-md text-xs font-bold uppercase bg-slate-200 text-slate-700">
+              Stage: {deal.stage}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        
+        {/* LEFT COLUMN: Deal Data & Client Info */}
+        <div className="md:col-span-1 space-y-6">
+          
+          {/* NEW: Toggleable Financials/Edit Card */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative">
+            
+            {isEditing ? (
+              <form onSubmit={handleUpdateDeal} className="space-y-4">
+                <h3 className="text-sm font-bold text-slate-800 mb-4 border-b pb-2">Edit Transaction</h3>
+                
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Deal Name / Address</label>
+                  <input required type="text" value={editFormData.deal_name} onChange={e => setEditFormData({...editFormData, deal_name: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Expected Close Date</label>
+                  <input type="date" value={editFormData.expected_close_date} onChange={e => setEditFormData({...editFormData, expected_close_date: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Est. Value</label>
+                    <input type="text" placeholder="$500,000" value={editFormData.estimated_value} onChange={e => setEditFormData({...editFormData, estimated_value: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Comm. %</label>
+                    <input type="text" placeholder="3%" value={editFormData.commission_rate} onChange={e => setEditFormData({...editFormData, commission_rate: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-4">
+                  <button type="button" onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded font-medium transition-colors">Cancel</button>
+                  <button type="submit" className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors">Save</button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <button onClick={handleEditClick} className="absolute top-4 right-4 text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors">
+                  Edit
+                </button>
+                <h3 className="text-sm font-bold text-slate-800 mb-4 border-b pb-2">Transaction Details</h3>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Expected Close</p>
+                    <p className="text-slate-800 font-medium">
+                      {deal.expected_close_date 
+                        ? new Date(new Date(deal.expected_close_date).getTime() + new Date().getTimezoneOffset() * 60000).toLocaleDateString() 
+                        : 'TBD'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Est. Value</p>
+                    <p className="text-slate-800 font-medium">{deal.estimated_value || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Commission Rate</p>
+                    <p className="text-slate-800 font-medium">{deal.commission_rate || '—'}</p>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* The Linked Client Card */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <h3 className="text-sm font-bold text-slate-800 mb-4 border-b pb-2">Associated Client</h3>
+            <Link to={`/contacts/${contact.contact_id}`} className="group block">
+              <p className="font-bold text-blue-600 group-hover:text-blue-800 transition-colors text-lg">
+                {contact.first_name} {contact.last_name}
+              </p>
+              <p className="text-sm text-slate-600 mt-1">{contact.email || 'No email on file'}</p>
+              <p className="text-sm text-slate-600">{contact.phone || 'No phone on file'}</p>
+            </Link>
+          </div>
+
+        </div>
+
+        {/* RIGHT COLUMN: The Compliance Checklist */}
+        <div className="md:col-span-2">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="p-4 border-b border-slate-200 bg-slate-50">
+              <h3 className="font-bold text-slate-800">Compliance & Task Checklist</h3>
+            </div>
+            
+            <div className="p-6">
+              {tasks.length === 0 ? (
+                <p className="text-slate-500 italic text-center py-8">No tasks have been generated for this deal yet. Move it to a new stage to trigger automations!</p>
+              ) : (
+                <div className="space-y-6">
+                  {/* Active Tasks */}
+                  {activeTasks.length > 0 && (
+                    <ul className="space-y-3">
+                      {activeTasks.map(task => (
+                        <li key={task.task_id} className="flex items-center space-x-3 p-3 bg-slate-50 rounded-lg border border-slate-200 transition-colors hover:border-blue-300">
+                          <input 
+                            type="checkbox" 
+                            checked={false}
+                            onChange={() => handleToggleTask(task.task_id, task.is_completed)}
+                            className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" 
+                          />
+                          <div>
+                            <p className="font-medium text-slate-800">{task.task_name}</p>
+                            <p className="text-xs text-slate-500">
+                              Due: {new Date(task.due_date).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {/* Completed Tasks */}
+                  {completedTasks.length > 0 && (
+                    <div className="pt-4 border-t border-slate-100">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Completed</h4>
+                      <ul className="space-y-2 opacity-75">
+                        {completedTasks.map(task => (
+                          <li key={task.task_id} className="flex items-center space-x-3 p-2">
+                            <input 
+                              type="checkbox" 
+                              checked={true}
+                              onChange={() => handleToggleTask(task.task_id, task.is_completed)}
+                              className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer" 
+                            />
+                            <p className="text-sm font-medium text-slate-500 line-through">{task.task_name}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
   );
 }
 
@@ -814,6 +1107,7 @@ function App() {
             <Route path="/pipeline" element={<Pipeline />} />
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/contacts/:id" element={<ContactProfile />} />
+            <Route path="/deals/:id" element={<DealProfile />} />
           </Routes>
         </main>
       </div>

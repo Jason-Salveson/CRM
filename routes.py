@@ -215,6 +215,46 @@ def get_user_deals(user_id: UUID, db: Session = Depends(get_db)):
     
     return deals
 
+@router.get("/deals/{deal_id}")
+def get_deal_details(deal_id: UUID, db: Session = Depends(get_db)):
+    # 1. Fetch the specific deal
+    deal = db.query(models.Deal).filter(models.Deal.deal_id == deal_id).first()
+    if not deal:
+        raise HTTPException(status_code=404, detail="Deal not found.")
+    
+    # 2. Fetch the associated client (so we can display their name and phone number)
+    contact = db.query(models.Contact).filter(models.Contact.contact_id == deal.contact_id).first()
+    
+    # 3. Fetch all compliance tasks strictly linked to this transaction
+    tasks = db.query(models.Task).filter(
+        models.Task.deal_id == deal_id
+    ).order_by(models.Task.due_date.asc()).all()
+    
+    # 4. Package the ecosystem into a single JSON payload
+    return {
+        "deal": deal,
+        "contact": contact,
+        "tasks": tasks
+    }
+
+@router.patch("/deals/{deal_id}", response_model=schemas.DealResponse)
+def update_deal(deal_id: UUID, deal_update: schemas.DealUpdate, db: Session = Depends(get_db)):
+    # 1. Find the deal
+    deal = db.query(models.Deal).filter(models.Deal.deal_id == deal_id).first()
+    if not deal:
+        raise HTTPException(status_code=404, detail="Deal not found.")
+    
+    # 2. Extract only the fields the user changed
+    update_data = deal_update.dict(exclude_unset=True)
+    
+    # 3. Apply changes and save
+    for key, value in update_data.items():
+        setattr(deal, key, value)
+        
+    db.commit()
+    db.refresh(deal)
+    return deal
+
 # ==========================================
 # TASK ROUTES (The Daily Dashboard)
 # ==========================================

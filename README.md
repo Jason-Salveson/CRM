@@ -68,3 +68,26 @@ Implemented a native HTML <datalist> on the frontend for lightweight, autocomple
 Native Pipeline Creation:
 
 Upgraded the Kanban board with a modular popup form that securely fetches existing contacts for dropdown selection and instantly injects new Deals into the database.
+
+Day 2 (Mid-Day) Architecture Summary: The Pipeline & Deal Engine
+Responsive Pipeline Refactor:
+
+Engineered a tabbed interface to separate Buyer and Seller pipelines.
+
+Implemented advanced Flexbox scaling (flex-1 min-w-0) to ensure the Kanban board dynamically squeezes to fit any monitor size, entirely eliminating horizontal scrolling.
+
+The Deal Deep-Dive (/deals/:id):
+
+Built a highly efficient relational GET route in FastAPI that bundles a transaction, its associated client, and its compliance tasks into a single payload.
+
+Constructed a dedicated Deal Profile UI to view transaction details, client contact info, and manage the task checklist.
+
+Inline Transaction Editing:
+
+Created an Optional Pydantic schema and PATCH route for partial deal updates.
+
+Built a state-toggled form on the frontend to instantly update Financials (Commission, Value) and Close Dates without a page refresh.
+
+Cross-Entity Navigation:
+
+Wired the application's ecosystem together by making Deals clickable directly from the Contact Profile, routing the user instantly to the Deal Deep-Dive.
