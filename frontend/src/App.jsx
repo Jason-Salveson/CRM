@@ -17,6 +17,7 @@ function Navbar() {
           <Link to="/" className="hover:text-blue-300 transition-colors">Command Center</Link>
           <Link to="/pipeline" className="hover:text-blue-300 transition-colors">Pipeline</Link>
           <Link to="/contacts" className="hover:text-blue-300 transition-colors">Databank</Link>
+          <Link to="/settings" className="hover:text-blue-300 transition-colors">Templates</Link>
         </div>
       </div>
     </nav>
@@ -948,20 +949,39 @@ function Contacts() {
 function DealProfile() {
   const { id } = useParams();
   const [data, setData] = useState(null);
+  
+  // New States for the Compliance Engine
+  const [dealDocs, setDealDocs] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
-  // NEW: State for editing the deal
+  // Editing States
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState({});
+  const [rejectionNotes, setRejectionNotes] = useState({}); // Stores draft notes before saving
+
+  const AGENT_ID = "7fd135a8-e667-4ae3-ab21-c289e89a3271";
 
   useEffect(() => {
-    axios.get(`http://127.0.0.1:8080/deals/${id}`)
-      .then(response => {
-        setData(response.data);
+    // We fetch the Deal, the Master Templates, AND the cloned Documents all at once
+    const fetchDeal = axios.get(`http://127.0.0.1:8080/deals/${id}`);
+    const fetchTemplates = axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/templates/`);
+    const fetchDocs = axios.get(`http://127.0.0.1:8080/deals/${id}/documents/`);
+
+    Promise.all([fetchDeal, fetchTemplates, fetchDocs])
+      .then(responses => {
+        setData(responses[0].data);
+        
+        // Only show templates that match this deal's type (Buyer/Seller/Lease)
+        const dealType = responses[0].data.deal.deal_type;
+        setTemplates(responses[1].data.filter(t => t.deal_type === dealType));
+        
+        setDealDocs(responses[2].data);
         setIsLoading(false);
       })
       .catch(error => {
-        console.error("Error fetching deal details:", error);
+        console.error("Error fetching deal ecosystem:", error);
         setIsLoading(false);
       });
   }, [id]);
@@ -974,11 +994,9 @@ function DealProfile() {
         task.task_id === taskId ? { ...task, is_completed: newStatus } : task
       )
     }));
-    axios.patch(`http://127.0.0.1:8080/tasks/${taskId}/status?is_completed=${newStatus}`)
-      .catch(error => console.error("Database sync failed:", error));
+    axios.patch(`http://127.0.0.1:8080/tasks/${taskId}/status?is_completed=${newStatus}`);
   };
 
-  // NEW: Handle Edit Button Click
   const handleEditClick = () => {
     setEditFormData({
       deal_name: data.deal.deal_name || '',
@@ -989,15 +1007,10 @@ function DealProfile() {
     setIsEditing(true);
   };
 
-  // NEW: Save the Deal Updates
   const handleUpdateDeal = (e) => {
     e.preventDefault();
-    
-    // Convert empty date string to null for the database
     const submissionData = { ...editFormData };
-    if (submissionData.expected_close_date === '') {
-      submissionData.expected_close_date = null;
-    }
+    if (submissionData.expected_close_date === '') submissionData.expected_close_date = null;
 
     axios.patch(`http://127.0.0.1:8080/deals/${id}`, submissionData)
       .then(response => {
@@ -1007,12 +1020,66 @@ function DealProfile() {
       .catch(error => console.error("Error updating deal:", error));
   };
 
+  // ==========================================
+  // COMPLIANCE ENGINE FUNCTIONS
+  // ==========================================
+  const handleApplyTemplate = () => {
+    if (!selectedTemplateId) return;
+    
+    axios.post(`http://127.0.0.1:8080/deals/${id}/apply-template/${selectedTemplateId}`)
+      .then(response => setDealDocs(response.data)) // Instantly renders the new checklist
+      .catch(error => console.error("Error cloning template:", error));
+  };
+
+  const handleDocStatusChange = (docId, newStatus) => {
+    // Optimistic UI Update
+    setDealDocs(currentDocs => currentDocs.map(doc => 
+      doc.doc_id === docId ? { ...doc, status: newStatus } : doc
+    ));
+
+    // If they change it to anything other than rejected, we clear the notes
+    const payload = { new_status: newStatus };
+    if (newStatus !== "Rejected") {
+      payload.reviewer_notes = ""; 
+    }
+
+    axios.patch(`http://127.0.0.1:8080/deal-documents/${docId}/status`, payload)
+      .catch(error => console.error("Database sync failed:", error));
+  };
+
+  const handleSaveRejectionNote = (docId) => {
+    const note = rejectionNotes[docId] || "";
+    
+    // Update the local state so the note displays immediately
+    setDealDocs(currentDocs => currentDocs.map(doc => 
+      doc.doc_id === docId ? { ...doc, reviewer_notes: note } : doc
+    ));
+
+    axios.patch(`http://127.0.0.1:8080/deal-documents/${docId}/status`, { 
+      new_status: "Rejected", 
+      reviewer_notes: note 
+    }).then(() => {
+      // Clear the draft input state
+      setRejectionNotes(prev => ({ ...prev, [docId]: "" }));
+    });
+  };
+
   if (isLoading) return <div className="p-8 text-slate-500 animate-pulse">Loading Deal File...</div>;
   if (!data || !data.deal) return <div className="p-8 text-red-500">Deal not found.</div>;
 
   const { deal, contact, tasks } = data;
   const activeTasks = tasks.filter(t => t.is_completed === "False");
   const completedTasks = tasks.filter(t => t.is_completed === "True");
+
+  // Helper for status badge colors
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'Approved': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      case 'Uploaded': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'Rejected': return 'bg-red-100 text-red-800 border-red-200';
+      default: return 'bg-slate-100 text-slate-600 border-slate-200';
+    }
+  };
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -1034,28 +1101,24 @@ function DealProfile() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* LEFT COLUMN: Deal Data & Client Info */}
-        <div className="md:col-span-1 space-y-6">
+        <div className="lg:col-span-1 space-y-6">
           
-          {/* NEW: Toggleable Financials/Edit Card */}
+          {/* Financials / Edit Card */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative">
-            
             {isEditing ? (
               <form onSubmit={handleUpdateDeal} className="space-y-4">
                 <h3 className="text-sm font-bold text-slate-800 mb-4 border-b pb-2">Edit Transaction</h3>
-                
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">Deal Name / Address</label>
                   <input required type="text" value={editFormData.deal_name} onChange={e => setEditFormData({...editFormData, deal_name: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
                 </div>
-                
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">Expected Close Date</label>
                   <input type="date" value={editFormData.expected_close_date} onChange={e => setEditFormData({...editFormData, expected_close_date: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white" />
                 </div>
-                
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">Est. Value</label>
@@ -1066,7 +1129,6 @@ function DealProfile() {
                     <input type="text" placeholder="3%" value={editFormData.commission_rate} onChange={e => setEditFormData({...editFormData, commission_rate: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
                   </div>
                 </div>
-
                 <div className="flex justify-end space-x-2 pt-4">
                   <button type="button" onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded font-medium transition-colors">Cancel</button>
                   <button type="submit" className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors">Save</button>
@@ -1114,23 +1176,123 @@ function DealProfile() {
 
         </div>
 
-        {/* RIGHT COLUMN: The Compliance Checklist */}
-        <div className="md:col-span-2">
+        {/* RIGHT COLUMN: Checklists */}
+        <div className="lg:col-span-2 space-y-6">
+          
+          {/* 1. COMPLIANCE DOCUMENTS CARD */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+              <h3 className="font-bold text-slate-800">Broker Compliance</h3>
+              <span className="text-xs font-bold text-slate-500 bg-white px-2 py-1 border border-slate-200 rounded-md">
+                {dealDocs.filter(d => d.status === 'Approved').length} / {dealDocs.length} Approved
+              </span>
+            </div>
+            
+            <div className="p-6">
+              {dealDocs.length === 0 ? (
+                <div className="text-center py-6">
+                  <p className="text-slate-500 mb-4 text-sm">No compliance template applied yet.</p>
+                  <div className="flex items-center justify-center space-x-2">
+                    <select 
+                      value={selectedTemplateId}
+                      onChange={e => setSelectedTemplateId(e.target.value)}
+                      className="px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white min-w-[200px]"
+                    >
+                      <option value="" disabled>Select a {deal.deal_type} Template...</option>
+                      {templates.map(t => (
+                        <option key={t.template_id} value={t.template_id}>{t.template_name}</option>
+                      ))}
+                    </select>
+                    <button 
+                      onClick={handleApplyTemplate}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium transition-colors shadow-sm"
+                    >
+                      Apply Documents
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <ul className="space-y-4">
+                  {dealDocs.map(doc => (
+                    <li key={doc.doc_id} className="p-4 border border-slate-200 rounded-lg bg-slate-50/50">
+                      
+                      {/* Top Row: Name and Status Dropdown */}
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-bold text-slate-800 text-sm">{doc.document_name}</p>
+                          {doc.is_required === 'True' && (
+                            <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Required</span>
+                          )}
+                        </div>
+                        <select
+                          value={doc.status}
+                          onChange={(e) => handleDocStatusChange(doc.doc_id, e.target.value)}
+                          className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded border outline-none cursor-pointer ${getStatusColor(doc.status)}`}
+                        >
+                          <option value="Missing">Missing</option>
+                          <option value="Uploaded">Uploaded</option>
+                          <option value="Approved">Approved</option>
+                          <option value="Rejected">Rejected</option>
+                        </select>
+                      </div>
+
+                      {/* Bottom Row: The Rejection Engine */}
+                      {doc.status === 'Rejected' && (
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                          {doc.reviewer_notes ? (
+                            <div className="flex justify-between items-start">
+                              <p className="text-xs text-red-700 bg-red-50 p-2 rounded border border-red-100 flex-1">
+                                <strong>MCA Note:</strong> {doc.reviewer_notes}
+                              </p>
+                              <button 
+                                onClick={() => handleSaveRejectionNote(doc.doc_id)} // Saving an empty string clears it if they want to edit
+                                className="text-xs text-slate-500 hover:text-blue-600 ml-2 mt-1"
+                              >
+                                Edit
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex space-x-2">
+                              <input 
+                                type="text"
+                                placeholder="Reason for rejection (e.g. Missing signature on page 2)..."
+                                value={rejectionNotes[doc.doc_id] || ''}
+                                onChange={(e) => setRejectionNotes({...rejectionNotes, [doc.doc_id]: e.target.value})}
+                                className="flex-1 px-3 py-1.5 border border-red-300 focus:border-red-500 rounded text-xs outline-none bg-white"
+                              />
+                              <button 
+                                onClick={() => handleSaveRejectionNote(doc.doc_id)}
+                                className="bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded text-xs font-medium transition-colors"
+                              >
+                                Save Note
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          {/* 2. AUTOMATED ACTION ITEMS CARD */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="p-4 border-b border-slate-200 bg-slate-50">
-              <h3 className="font-bold text-slate-800">Compliance & Task Checklist</h3>
+              <h3 className="font-bold text-slate-800">Action Items</h3>
             </div>
             
             <div className="p-6">
               {tasks.length === 0 ? (
-                <p className="text-slate-500 italic text-center py-8">No tasks have been generated for this deal yet. Move it to a new stage to trigger automations!</p>
+                <p className="text-slate-500 italic text-center py-4">No automated tasks currently active.</p>
               ) : (
                 <div className="space-y-6">
-                  {/* Active Tasks */}
                   {activeTasks.length > 0 && (
                     <ul className="space-y-3">
                       {activeTasks.map(task => (
-                        <li key={task.task_id} className="flex items-center space-x-3 p-3 bg-slate-50 rounded-lg border border-slate-200 transition-colors hover:border-blue-300">
+                        <li key={task.task_id} className="flex items-center space-x-3 p-3 bg-white rounded-lg border border-slate-200 transition-colors hover:border-blue-300 shadow-sm">
                           <input 
                             type="checkbox" 
                             checked={false}
@@ -1138,8 +1300,8 @@ function DealProfile() {
                             className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" 
                           />
                           <div>
-                            <p className="font-medium text-slate-800">{task.task_name}</p>
-                            <p className="text-xs text-slate-500">
+                            <p className="font-medium text-slate-800 text-sm">{task.task_name}</p>
+                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mt-0.5">
                               Due: {new Date(task.due_date).toLocaleDateString()}
                             </p>
                           </div>
@@ -1148,7 +1310,6 @@ function DealProfile() {
                     </ul>
                   )}
 
-                  {/* Completed Tasks */}
                   {completedTasks.length > 0 && (
                     <div className="pt-4 border-t border-slate-100">
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Completed</h4>
@@ -1171,6 +1332,199 @@ function DealProfile() {
               )}
             </div>
           </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 7. The Compliance Settings Component (Phase 2 Master Templates)
+function ComplianceSettings() {
+  const [templates, setTemplates] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+
+  // Form States
+  const [newTemplateName, setNewTemplateName] = useState('');
+  const [newTemplateType, setNewTemplateType] = useState('Buyer');
+  const [newDocName, setNewDocName] = useState('');
+
+  const AGENT_ID = "7fd135a8-e667-4ae3-ab21-c289e89a3271";
+
+  // Fetch all templates on load
+  const fetchTemplates = () => {
+    axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/templates/`)
+      .then(response => {
+        setTemplates(response.data);
+        setIsLoading(false);
+        // If we were looking at a template, update it so the new documents appear
+        if (selectedTemplate) {
+          const updatedSelection = response.data.find(t => t.template_id === selectedTemplate.template_id);
+          setSelectedTemplate(updatedSelection);
+        }
+      })
+      .catch(error => {
+        console.error("Error fetching templates:", error);
+        setIsLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    fetchTemplates();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleCreateTemplate = (e) => {
+    e.preventDefault();
+    if (!newTemplateName.trim()) return;
+
+    axios.post(`http://127.0.0.1:8080/users/${AGENT_ID}/templates/`, {
+      template_name: newTemplateName,
+      deal_type: newTemplateType
+    })
+      .then(() => {
+        setNewTemplateName('');
+        fetchTemplates(); // Refresh the list
+      })
+      .catch(error => console.error("Error creating template:", error));
+  };
+
+  const handleAddDocument = (e) => {
+    e.preventDefault();
+    if (!selectedTemplate || !newDocName.trim()) return;
+
+    axios.post(`http://127.0.0.1:8080/templates/${selectedTemplate.template_id}/items/`, {
+      document_name: newDocName,
+      is_required: "True"
+    })
+      .then(() => {
+        setNewDocName('');
+        fetchTemplates(); // Refresh to pull down the newly nested item
+      })
+      .catch(error => console.error("Error adding document:", error));
+  };
+
+  if (isLoading) return <div className="p-8 text-slate-500 animate-pulse">Loading Settings...</div>;
+
+  return (
+    <div className="p-8 max-w-7xl mx-auto">
+      <div className="mb-8">
+        <h2 className="text-3xl font-bold text-slate-800">Compliance Settings</h2>
+        <p className="text-slate-500 mt-1">Manage your master document checklists for different transaction types.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        
+        {/* LEFT COLUMN: Template Management */}
+        <div className="md:col-span-1 space-y-6">
+          
+          {/* Create Template Form */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <h3 className="text-sm font-bold text-slate-800 mb-4 border-b pb-2">Create Master Template</h3>
+            <form onSubmit={handleCreateTemplate} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Template Name</label>
+                <input required type="text" placeholder="e.g. Standard AZ Buyer" value={newTemplateName} onChange={e => setNewTemplateName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Transaction Type</label>
+                <select value={newTemplateType} onChange={e => setNewTemplateType(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white">
+                  <option value="Buyer">Buyer</option>
+                  <option value="Seller">Seller</option>
+                  <option value="Lease">Lease</option>
+                </select>
+              </div>
+              <button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 text-white py-2 rounded font-medium transition-colors text-sm shadow-sm">
+                + Create Template
+              </button>
+            </form>
+          </div>
+
+          {/* Existing Templates List */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="p-4 border-b border-slate-200 bg-slate-50">
+              <h3 className="font-bold text-slate-800 text-sm">Your Templates</h3>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {templates.length === 0 ? (
+                <p className="p-4 text-sm text-slate-500 italic text-center">No templates built yet.</p>
+              ) : (
+                templates.map(template => (
+                  <div 
+                    key={template.template_id} 
+                    onClick={() => setSelectedTemplate(template)}
+                    className={`p-4 cursor-pointer transition-colors hover:bg-blue-50 flex justify-between items-center ${selectedTemplate?.template_id === template.template_id ? 'bg-blue-50 border-l-4 border-blue-600' : ''}`}
+                  >
+                    <div>
+                      <p className="font-semibold text-slate-800 text-sm">{template.template_name}</p>
+                      <p className="text-xs text-slate-500">{template.items?.length || 0} Documents</p>
+                    </div>
+                    <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${template.deal_type === 'Buyer' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                      {template.deal_type}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: Document Checklist Editor */}
+        <div className="md:col-span-2">
+          {selectedTemplate ? (
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full min-h-[500px]">
+              <div className="p-6 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-800">{selectedTemplate.template_name} Checklist</h3>
+                  <p className="text-sm text-slate-500 mt-1">Add the specific documents required for this transaction type.</p>
+                </div>
+              </div>
+
+              {/* Add Document Form */}
+              <div className="p-6 border-b border-slate-100 bg-white">
+                <form onSubmit={handleAddDocument} className="flex space-x-3">
+                  <input 
+                    required 
+                    type="text" 
+                    placeholder="e.g. Real Estate Agency Disclosure and Election" 
+                    value={newDocName} 
+                    onChange={e => setNewDocName(e.target.value)} 
+                    className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" 
+                  />
+                  <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors text-sm shadow-sm whitespace-nowrap">
+                    Add Document
+                  </button>
+                </form>
+              </div>
+
+              {/* Required Documents List */}
+              <div className="flex-1 p-6 bg-slate-50/50">
+                {selectedTemplate.items && selectedTemplate.items.length > 0 ? (
+                  <ul className="space-y-3">
+                    {selectedTemplate.items.map((item, index) => (
+                      <li key={item.item_id} className="flex items-center p-4 bg-white border border-slate-200 rounded-lg shadow-sm">
+                        <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center text-xs font-bold mr-4">
+                          {index + 1}
+                        </span>
+                        <p className="font-medium text-slate-800 flex-1">{item.document_name}</p>
+                        <span className="text-xs font-bold text-red-500 uppercase bg-red-50 px-2 py-1 rounded border border-red-100">
+                          Required
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-2 py-12">
+                    <p className="italic">No documents added to this template yet.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-50 border border-slate-200 border-dashed rounded-xl h-full min-h-[500px] flex items-center justify-center">
+              <p className="text-slate-500 font-medium">Select or create a template to manage its documents.</p>
+            </div>
+          )}
         </div>
 
       </div>
@@ -1194,6 +1548,7 @@ function App() {
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/contacts/:id" element={<ContactProfile />} />
             <Route path="/deals/:id" element={<DealProfile />} />
+            <Route path="/settings" element={<ComplianceSettings />} />
           </Routes>
         </main>
       </div>

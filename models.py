@@ -125,7 +125,6 @@ class Task(Base):
     client = relationship("Contact")
     deal = relationship("Deal")
 
-# Add this to the bottom of models.py
 class Note(Base):
     __tablename__ = "notes"
 
@@ -136,3 +135,50 @@ class Note(Base):
     
     # Optional: Relationship back to contact
     contact = relationship("Contact")
+
+# 8. Document Templates (The Master Checklists)
+class DocumentTemplate(Base):
+    __tablename__ = "document_templates"
+
+    template_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"))
+    
+    template_name = Column(String(100), nullable=False) # e.g., "Standard AZ Buyer"
+    deal_type = Column(String(20), CheckConstraint("deal_type IN ('Buyer', 'Seller', 'Lease')"))
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    owner = relationship("User")
+    items = relationship("TemplateItem", back_populates="template", cascade="all, delete-orphan")
+
+# 9. Template Items (The Individual Required Documents)
+class TemplateItem(Base):
+    __tablename__ = "template_items"
+
+    item_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    template_id = Column(UUID(as_uuid=True), ForeignKey("document_templates.template_id", ondelete="CASCADE"))
+    
+    document_name = Column(String(255), nullable=False) # e.g., "Real Estate Agency Disclosure"
+    is_required = Column(String(5), default="True") # Using string for DB cross-compatibility
+    
+    # Relationships
+    template = relationship("DocumentTemplate", back_populates="items")
+
+# 10. Deal Documents (The specific checklist for a specific transaction)
+class DealDocument(Base):
+    __tablename__ = "deal_documents"
+
+    doc_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    deal_id = Column(UUID(as_uuid=True), ForeignKey("deals.deal_id", ondelete="CASCADE"))
+    
+    document_name = Column(String(255), nullable=False)
+    # Status tracks where the document is in the pipeline
+    status = Column(String(50), CheckConstraint("status IN ('Missing', 'Uploaded', 'Approved', 'Rejected')", name="chk_document_status"), default="Missing")
+    is_required = Column(String(5), default="True")
+    reviewer_notes = Column(Text, nullable=True)
+    
+    # We will eventually add a file_url column here when you are ready to upload PDFs!
+    
+    # Relationship tying it back to the specific transaction
+    deal = relationship("Deal", backref="documents")

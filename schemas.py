@@ -150,3 +150,53 @@ class NoteResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# ==========================================
+# COMPLIANCE TEMPLATE SCHEMAS
+# ==========================================
+class TemplateItemBase(BaseModel):
+    document_name: str = Field(..., max_length=255)
+    is_required: Optional[str] = Field(default="True", pattern="^(True|False)$")
+
+class TemplateItemCreate(TemplateItemBase):
+    pass
+
+class TemplateItemResponse(TemplateItemBase):
+    item_id: UUID
+    template_id: UUID
+
+    model_config = ConfigDict(from_attributes=True)
+
+class DocumentTemplateBase(BaseModel):
+    template_name: str = Field(..., max_length=100)
+    deal_type: str = Field(..., pattern="^(Buyer|Seller|Lease)$")
+
+class DocumentTemplateCreate(DocumentTemplateBase):
+    pass
+
+class DocumentTemplateResponse(DocumentTemplateBase):
+    template_id: UUID
+    user_id: UUID
+    created_at: datetime
+    items: List[TemplateItemResponse] = [] # Nests the individual docs inside the payload
+
+    model_config = ConfigDict(from_attributes=True)
+
+# ==========================================
+# DEAL DOCUMENT SCHEMAS
+# ==========================================
+class DealDocumentBase(BaseModel):
+    document_name: str
+    status: Optional[str] = "Missing"
+    is_required: Optional[str] = "True"
+    reviewer_notes: Optional[str] = None
+
+class DealDocumentResponse(DealDocumentBase):
+    doc_id: UUID
+    deal_id: UUID
+
+    model_config = ConfigDict(from_attributes=True)
+    
+class DealDocumentStatusUpdate(BaseModel):
+    new_status: str = Field(..., pattern="^(Missing|Uploaded|Approved|Rejected)$")
+    reviewer_notes: Optional[str] = None

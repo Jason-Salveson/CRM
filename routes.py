@@ -237,6 +237,60 @@ def get_deal_details(deal_id: UUID, db: Session = Depends(get_db)):
         "tasks": tasks
     }
 
+@router.post("/deals/{deal_id}/apply-template/{template_id}", response_model=List[schemas.DealDocumentResponse])
+def apply_template_to_deal(deal_id: UUID, template_id: UUID, db: Session = Depends(get_db)):
+    # 1. Verify the Deal exists
+    deal = db.query(models.Deal).filter(models.Deal.deal_id == deal_id).first()
+    if not deal:
+        raise HTTPException(status_code=404, detail="Deal not found.")
+        
+    # 2. Verify the Master Template exists
+    template = db.query(models.DocumentTemplate).filter(models.DocumentTemplate.template_id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found.")
+        
+    # 3. The Cloning Engine
+    for item in template.items:
+        # Safety check: Don't duplicate documents if the agent clicks the button twice
+        existing_doc = db.query(models.DealDocument).filter(
+            models.DealDocument.deal_id == deal_id,
+            models.DealDocument.document_name == item.document_name
+        ).first()
+        
+        if not existing_doc:
+            new_doc = models.DealDocument(
+                deal_id=deal_id,
+                document_name=item.document_name,
+                is_required=item.is_required,
+                status="Missing"
+            )
+            db.add(new_doc)
+            
+    db.commit()
+    
+    # 4. Return the newly minted checklist
+    return db.query(models.DealDocument).filter(models.DealDocument.deal_id == deal_id).all()
+
+@router.get("/deals/{deal_id}/documents/", response_model=List[schemas.DealDocumentResponse])
+def get_deal_documents(deal_id: UUID, db: Session = Depends(get_db)):
+    return db.query(models.DealDocument).filter(models.DealDocument.deal_id == deal_id).all()
+
+@router.patch("/deal-documents/{doc_id}/status")
+def update_document_status(doc_id: UUID, status_update: schemas.DealDocumentStatusUpdate, db: Session = Depends(get_db)):
+    doc = db.query(models.DealDocument).filter(models.DealDocument.doc_id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+        
+    doc.status = status_update.new_status
+    
+    # NEW: If the React frontend sent a rejection note, save it to the database
+    if status_update.reviewer_notes is not None:
+        doc.reviewer_notes = status_update.reviewer_notes
+        
+    db.commit()
+    
+    return {"status": "success", "message": f"Document marked as {doc.status}"}
+
 @router.patch("/deals/{deal_id}", response_model=schemas.DealResponse)
 def update_deal(deal_id: UUID, deal_update: schemas.DealUpdate, db: Session = Depends(get_db)):
     # 1. Find the deal
@@ -284,3 +338,37 @@ def update_task_status(task_id: UUID, is_completed: str, db: Session = Depends(g
     db.commit()
     
     return {"status": "success", "message": f"Task marked as {is_completed}."}
+
+# ==========================================
+# COMPLIANCE TEMPLATE ROUTES
+# ==========================================
+@router.post("/users/{user_id}/templates/", response_model=schemas.DocumentTemplateResponse)
+def create_template(user_id: UUID, template: schemas.DocumentTemplateCreate, db: Session = Depends(get_db)):
+    # Verify agent exists
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+    
+    new_template = models.DocumentTemplate(**template.model_dump(), user_id=user_id)
+    db.add(new_template)
+    db.commit()
+    db.refresh(new_template)
+    return new_template
+
+@router.get("/users/{user_id}/templates/", response_model=List[schemas.DocumentTemplateResponse])
+def get_user_templates(user_id: UUID, db: Session = Depends(get_db)):
+    # Fetches all templates and automatically includes their nested items
+    return db.query(models.DocumentTemplate).filter(models.DocumentTemplate.user_id == user_id).all()
+
+@router.post("/templates/{template_id}/items/", response_model=schemas.TemplateItemResponse)
+def add_template_item(template_id: UUID, item: schemas.TemplateItemCreate, db: Session = Depends(get_db)):
+    # Verify template exists
+    template = db.query(models.DocumentTemplate).filter(models.DocumentTemplate.template_id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found.")
+    
+    new_item = models.TemplateItem(**item.model_dump(), template_id=template_id)
+    db.add(new_item)
+    db.commit()
+    db.refresh(new_item)
+    return new_item
