@@ -1,6 +1,6 @@
 # models.py
 import uuid
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Table, CheckConstraint, UniqueConstraint
+from sqlalchemy import Column, String, Text, DateTime, Date, ForeignKey, Table, CheckConstraint, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -16,6 +16,15 @@ contact_tags = Table(
     Column('assigned_at', DateTime(timezone=True), server_default=func.now())
 )
 
+deal_partners = Table(
+    'deal_partners',
+    Base.metadata,
+    Column('deal_id', UUID(as_uuid=True), ForeignKey('deals.deal_id', ondelete="CASCADE"), primary_key=True),
+    Column('user_id', UUID(as_uuid=True), ForeignKey('users.user_id', ondelete="CASCADE"), primary_key=True),
+    Column('partner_role', String(50), default='Co-Agent'),
+    Column('assigned_at', DateTime(timezone=True), server_default=func.now())
+)
+
 # 2. Users Table
 class User(Base):
     __tablename__ = "users"
@@ -28,6 +37,11 @@ class User(Base):
     role = Column(String(50), CheckConstraint("role IN ('Agent', 'Broker', 'Admin')", name="chk_user_role"), default="Agent")
     brokerage_id = Column(UUID(as_uuid=True), nullable=True)
     invite_code = Column(String(20), unique=True, nullable=True)
+    profile_pic_url = Column(String(500), nullable=True)
+    license_number = Column(String(50), nullable=True)
+    birthday = Column(Date, nullable=True)
+    bio = Column(Text, nullable=True)
+    website = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     deals = relationship("Deal", back_populates="owner", cascade="all, delete-orphan")
 
@@ -53,13 +67,18 @@ class Contact(Base):
     lead_source = Column(String(100))
     notes = Column(Text)
     spouse_id = Column(UUID(as_uuid=True), ForeignKey("contacts.contact_id", ondelete="SET NULL"))
+    mailing_address = Column(Text, nullable=True)
+    alternate_phone = Column(String(20), nullable=True)
+    birthday = Column(Date, nullable=True)
+    anniversary = Column(Date, nullable=True)
+    hobbies = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     owner = relationship("User", back_populates="contacts")
     tags = relationship("Tag", secondary=contact_tags, back_populates="contacts")
-    deals = relationship("Deal", back_populates="client", cascade="all, delete-orphan")
+    deals = relationship("Deal", back_populates="client", cascade="all, delete-orphan", foreign_keys="[Deal.contact_id]")
     
     # NEW: The relationship mapper (remote_side tells SQLAlchemy it points to itself)
     spouse = relationship("Contact", remote_side=[contact_id])
@@ -89,15 +108,19 @@ class Deal(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"))
     contact_id = Column(UUID(as_uuid=True), ForeignKey("contacts.contact_id", ondelete="CASCADE"))
     
-    deal_name = Column(String(100), nullable=False) # e.g., "Keller - 123 Main St Purchase"
-    deal_type = Column(String(20), CheckConstraint("deal_type IN ('Buyer', 'Seller', 'Lease')"))
+    # NEW: Link a secondary contact (Spouse/Co-Signer)
+    co_client_id = Column(UUID(as_uuid=True), ForeignKey("contacts.contact_id", ondelete="SET NULL"), nullable=True)
     
-    # The MREA Pipeline Stages
+    deal_name = Column(String(100), nullable=False)
+    deal_type = Column(String(20), CheckConstraint("deal_type IN ('Buyer', 'Seller', 'Lease')"))
     stage = Column(String(50), CheckConstraint("stage IN ('Lead', 'Contact', 'Appointment', 'Active', 'Under Contract', 'Closed')"), default='Lead')
     
     property_address = Column(Text)
-    estimated_value = Column(String(50)) # Kept as string for now to handle inputs like "$500k" or "500000"
-    commission_rate = Column(String(10)) # e.g., "3%"
+    estimated_value = Column(String(50)) 
+    commission_rate = Column(String(10)) 
+    
+    # NEW: Financing Tracking
+    financing_type = Column(String(50), nullable=True)
     
     expected_close_date = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -105,7 +128,13 @@ class Deal(Base):
 
     # Relationships
     owner = relationship("User", back_populates="deals")
-    client = relationship("Contact", back_populates="deals")
+    
+    # Specify the foreign keys so SQLAlchemy doesn't get confused between the primary client and co-client
+    client = relationship("Contact", foreign_keys=[contact_id], back_populates="deals")
+    co_client = relationship("Contact", foreign_keys=[co_client_id])
+    
+    # The Deal Sharing Network!
+    partners = relationship("User", secondary=deal_partners, backref="partnered_deals")
 
 class Task(Base):
     __tablename__ = "tasks"

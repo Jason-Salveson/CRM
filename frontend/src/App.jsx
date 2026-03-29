@@ -199,6 +199,7 @@ function Navbar() {
           <Link to="/" className="hover:text-blue-300 transition-colors">Command Center</Link>
           <Link to="/pipeline" className="hover:text-blue-300 transition-colors">Pipeline</Link>
           <Link to="/contacts" className="hover:text-blue-300 transition-colors">Databank</Link>
+          <Link to="/profile" className="hover:text-blue-300 transition-colors">Profile</Link>
           
           {user?.role === 'Broker' && (
             <Link to="/settings" className="hover:text-emerald-400 text-emerald-300 transition-colors flex items-center">
@@ -224,6 +225,111 @@ function Navbar() {
         </div>
       </div>
     </nav>
+  );
+}
+
+// ==========================================
+// AGENT PROFILE (NEW PHASE 4)
+// ==========================================
+function AgentProfile() {
+  const { user } = useAuth();
+  const [profileData, setProfileData] = useState({});
+  const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    axios.get(`http://127.0.0.1:8080/users/${user.id}`)
+      .then(res => { setProfileData(res.data); setIsLoading(false); })
+      .catch(err => { console.error("Error fetching profile:", err); setIsLoading(false); });
+  }, [user.id]);
+
+  const handleUpdate = (e) => {
+    e.preventDefault();
+    axios.patch(`http://127.0.0.1:8080/users/${user.id}`, profileData)
+      .then(res => { setProfileData(res.data); setIsEditing(false); })
+      .catch(err => console.error("Error updating profile:", err));
+  };
+
+  if (isLoading) return <div className="p-8 text-slate-500 animate-pulse">Loading Profile...</div>;
+
+  return (
+    <div className="p-8 max-w-4xl mx-auto">
+      <h2 className="text-3xl font-bold text-slate-800 mb-6">Agent Profile</h2>
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8">
+        {isEditing ? (
+          <form onSubmit={handleUpdate} className="space-y-6">
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">First Name</label>
+                <input type="text" value={profileData.first_name || ''} onChange={e => setProfileData({...profileData, first_name: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Last Name</label>
+                <input type="text" value={profileData.last_name || ''} onChange={e => setProfileData({...profileData, last_name: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">License Number</label>
+                <input type="text" value={profileData.license_number || ''} onChange={e => setProfileData({...profileData, license_number: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Birthday</label>
+                <input type="date" value={profileData.birthday || ''} onChange={e => setProfileData({...profileData, birthday: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-slate-700 mb-1">Website URL</label>
+                <input type="url" value={profileData.website || ''} onChange={e => setProfileData({...profileData, website: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="https://..." />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-slate-700 mb-1">Agent Bio</label>
+                <textarea value={profileData.bio || ''} onChange={e => setProfileData({...profileData, bio: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none h-32 resize-none"></textarea>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-3 mt-6 pt-6 border-t border-slate-100">
+              <button type="button" onClick={() => setIsEditing(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors">Cancel</button>
+              <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors shadow-sm">Save Profile</button>
+            </div>
+          </form>
+        ) : (
+          <div>
+            <div className="flex justify-between items-start mb-6">
+              <div className="flex items-center space-x-6">
+                <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center text-3xl font-bold text-blue-600 shadow-inner">
+                  {profileData.profile_pic_url ? <img src={profileData.profile_pic_url} alt="Profile" className="rounded-full w-full h-full object-cover"/> : `${profileData.first_name?.[0] || 'A'}${profileData.last_name?.[0] || ''}`}
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-slate-800">{profileData.first_name || 'Agent'} {profileData.last_name || ''}</h3>
+                  <p className="text-slate-500 font-medium mt-1">
+                    <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs uppercase tracking-wider mr-2">{user.role}</span>
+                    License: {profileData.license_number || 'Not Set'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setIsEditing(true)} className="text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg font-medium transition-colors">
+                Edit Profile
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-8 border-t border-slate-100 pt-6 mt-6">
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Website</p>
+                {profileData.website ? (
+                  <a href={profileData.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">{profileData.website}</a>
+                ) : (
+                  <p className="text-slate-500 italic">Not provided</p>
+                )}
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Birthday</p>
+                <p className="text-slate-800 font-medium">{profileData.birthday ? new Date(new Date(profileData.birthday).getTime() + new Date().getTimezoneOffset() * 60000).toLocaleDateString() : <span className="text-slate-500 italic">Not provided</span>}</p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Bio</p>
+                <p className="text-slate-800 whitespace-pre-wrap leading-relaxed">{profileData.bio || <span className="text-slate-500 italic">No bio written yet.</span>}</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -628,18 +734,19 @@ function Pipeline() {
   );
 }
 
-// 5. The Contact Profile (Deep Dive) Component
+// ==========================================
+// CONTACT PROFILE (PHASE 4 EXPANDED)
+// ==========================================
 function ContactProfile() {
-  const { id } = useParams(); // Grabs the contact_id straight out of the URL
+  const { id } = useParams(); 
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('deals'); // Controls which tab is showing
+  const [activeTab, setActiveTab] = useState('deals'); 
   const [newNoteContent, setNewNoteContent] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState({});
   const navigate = useNavigate();
 
-  // NEW: Tagging State
   const [allTags, setAllTags] = useState([]);
   const [newTagInput, setNewTagInput] = useState('');
   
@@ -647,7 +754,6 @@ function ContactProfile() {
   const AGENT_ID = user?.id; 
 
   useEffect(() => {
-    // NEW: Fetch Contact AND Master Tag List simultaneously
     const fetchContact = axios.get(`http://127.0.0.1:8080/contacts/${id}`);
     const fetchTags = axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/tags/`);
 
@@ -661,7 +767,7 @@ function ContactProfile() {
         console.error("Error fetching contact details:", error);
         setIsLoading(false);
       });
-  }, [id]);
+  }, [id, AGENT_ID]);
 
   if (isLoading) return <div className="p-8 text-slate-500 animate-pulse">Loading Profile...</div>;
   if (!data || !data.contact) return <div className="p-8 text-red-500">Contact not found.</div>;
@@ -670,57 +776,59 @@ function ContactProfile() {
 
   const handleAddNote = () => {
     if (!newNoteContent.trim()) return;
-
     axios.post(`http://127.0.0.1:8080/contacts/${id}/notes/`, { content: newNoteContent })
       .then(response => {
-        // Optimistically add the new note to the top of the list
-        setData({
-          ...data,
-          notes: [response.data, ...data.notes]
-        });
-        setNewNoteContent(''); // Clear the text box
+        setData({ ...data, notes: [response.data, ...data.notes] });
+        setNewNoteContent(''); 
       })
       .catch(error => console.error("Error saving note:", error));
   };
 
   const handleEditClick = () => {
+    // NEW: Phase 4 fields added to the edit state
     setEditFormData({
       first_name: data.contact.first_name || '',
       last_name: data.contact.last_name || '',
       email: data.contact.email || '',
       phone: data.contact.phone || '',
-      mrea_category: data.contact.mrea_category || "Haven't Met"
+      mrea_category: data.contact.mrea_category || "Haven't Met",
+      mailing_address: data.contact.mailing_address || '',
+      alternate_phone: data.contact.alternate_phone || '',
+      birthday: data.contact.birthday || '',
+      anniversary: data.contact.anniversary || '',
+      hobbies: data.contact.hobbies || ''
     });
     setIsEditing(true);
   };
 
   const handleUpdateContact = (e) => {
     e.preventDefault();
-    axios.patch(`http://127.0.0.1:8080/contacts/${id}`, editFormData)
+    
+    // Convert empty strings to null for date fields so Postgres doesn't crash
+    const payload = { ...editFormData };
+    if (!payload.birthday) payload.birthday = null;
+    if (!payload.anniversary) payload.anniversary = null;
+
+    axios.patch(`http://127.0.0.1:8080/contacts/${id}`, payload)
       .then(response => {
-        // Optimistically update the UI with the new data
         setData({ ...data, contact: response.data });
-        setIsEditing(false); // Close the edit form
+        setIsEditing(false); 
       })
       .catch(error => console.error("Error updating contact:", error));
   };
 
-  // NEW: Add a tag
   const handleAddTag = (e) => {
     e.preventDefault();
     if (!newTagInput.trim()) return;
-
     axios.post(`http://127.0.0.1:8080/contacts/${id}/tags/`, { tag_name: newTagInput })
       .then(response => {
-        // Optimistically add it to the UI
         const updatedTags = data.contact.tags ? [...data.contact.tags, response.data] : [response.data];
         setData({ ...data, contact: { ...data.contact, tags: updatedTags } });
-        setNewTagInput(''); // Clear input
+        setNewTagInput(''); 
       })
       .catch(error => console.error("Error adding tag:", error));
   };
 
-  // NEW: Remove a tag
   const handleRemoveTag = (tagId) => {
     axios.delete(`http://127.0.0.1:8080/contacts/${id}/tags/${tagId}`)
       .then(() => {
@@ -732,7 +840,6 @@ function ContactProfile() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      {/* Back Button */}
       <Link to="/contacts" className="text-blue-600 hover:text-blue-800 font-medium text-sm flex items-center mb-6 transition-colors">
         ← Back to Databank
       </Link>
@@ -744,39 +851,74 @@ function ContactProfile() {
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative">
             
             {isEditing ? (
-              /* --- EDIT MODE FORM --- */
               <form onSubmit={handleUpdateContact} className="space-y-4">
                 <h3 className="text-lg font-bold text-slate-800 border-b pb-2 mb-4">Edit Profile</h3>
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">First Name</label>
-                  <input required type="text" value={editFormData.first_name} onChange={e => setEditFormData({...editFormData, first_name: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                
+                {/* Core Info */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">First Name</label>
+                    <input required type="text" value={editFormData.first_name} onChange={e => setEditFormData({...editFormData, first_name: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Last Name</label>
+                    <input type="text" value={editFormData.last_name} onChange={e => setEditFormData({...editFormData, last_name: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Last Name</label>
-                  <input type="text" value={editFormData.last_name} onChange={e => setEditFormData({...editFormData, last_name: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-                </div>
+                
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">Email</label>
                   <input type="email" value={editFormData.email} onChange={e => setEditFormData({...editFormData, email: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
-                  <input type="tel" value={editFormData.phone} onChange={e => setEditFormData({...editFormData, phone: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                
+                {/* Phase 4: Expanded Contact Info */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Mobile Phone</label>
+                    <input type="tel" value={editFormData.phone} onChange={e => setEditFormData({...editFormData, phone: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Alt Phone</label>
+                    <input type="tel" value={editFormData.alternate_phone} onChange={e => setEditFormData({...editFormData, alternate_phone: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                  </div>
                 </div>
+
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Category</label>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Mailing Address</label>
+                  <textarea value={editFormData.mailing_address} onChange={e => setEditFormData({...editFormData, mailing_address: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm resize-none h-20"></textarea>
+                </div>
+
+                {/* Phase 4: Relationship Building Fields */}
+                <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-100">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Birthday</label>
+                    <input type="date" value={editFormData.birthday} onChange={e => setEditFormData({...editFormData, birthday: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Anniversary</label>
+                    <input type="date" value={editFormData.anniversary} onChange={e => setEditFormData({...editFormData, anniversary: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Hobbies & Interests</label>
+                  <input type="text" placeholder="e.g. Golf, Wine, Dogs" value={editFormData.hobbies} onChange={e => setEditFormData({...editFormData, hobbies: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1 mt-3 border-t border-slate-100 pt-3">Category</label>
                   <select value={editFormData.mrea_category} onChange={e => setEditFormData({...editFormData, mrea_category: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white">
                     <option value="Haven't Met">Haven't Met</option>
                     <option value="Met">Met</option>
                   </select>
                 </div>
+
                 <div className="flex justify-end space-x-2 pt-4">
                   <button type="button" onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded font-medium transition-colors">Cancel</button>
                   <button type="submit" className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors">Save</button>
                 </div>
               </form>
             ) : (
-              /* --- DISPLAY MODE --- */
               <>
                 <button onClick={handleEditClick} className="absolute top-4 right-4 text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors">
                   Edit
@@ -792,27 +934,53 @@ function ContactProfile() {
 
                 <div className="mt-6 space-y-4 pt-6 border-t border-slate-100">
                   <div>
-                    <p className="text-sm font-medium text-slate-500">Email</p>
-                    <p className="text-slate-800 font-medium">{contact.email || '—'}</p>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Contact Info</p>
+                    <p className="text-slate-800 font-medium text-sm">{contact.email || <span className="text-slate-400 italic">No email</span>}</p>
+                    <p className="text-slate-800 font-medium text-sm mt-1">M: {contact.phone || <span className="text-slate-400 italic">No mobile</span>}</p>
+                    {contact.alternate_phone && <p className="text-slate-800 font-medium text-sm mt-1">A: {contact.alternate_phone}</p>}
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-500">Phone</p>
-                    <p className="text-slate-800 font-medium">{contact.phone || '—'}</p>
-                  </div>
+
+                  {contact.mailing_address && (
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Mailing Address</p>
+                      <p className="text-slate-800 font-medium text-sm whitespace-pre-wrap">{contact.mailing_address}</p>
+                    </div>
+                  )}
+
+                  {/* Phase 4 Relational Data */}
+                  {(contact.birthday || contact.anniversary || contact.hobbies) && (
+                    <div className="pt-4 border-t border-slate-100 space-y-3">
+                      {contact.birthday && (
+                        <div>
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Birthday</p>
+                          <p className="text-slate-800 font-medium text-sm">{new Date(new Date(contact.birthday).getTime() + new Date().getTimezoneOffset() * 60000).toLocaleDateString()}</p>
+                        </div>
+                      )}
+                      {contact.anniversary && (
+                        <div>
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Anniversary</p>
+                          <p className="text-slate-800 font-medium text-sm">{new Date(new Date(contact.anniversary).getTime() + new Date().getTimezoneOffset() * 60000).toLocaleDateString()}</p>
+                        </div>
+                      )}
+                      {contact.hobbies && (
+                        <div>
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Hobbies</p>
+                          <p className="text-slate-800 font-medium text-sm">{contact.hobbies}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {/* NEW: Tags Section */}
+                {/* Tags Section */}
                 <div className="mt-6 pt-6 border-t border-slate-100">
                   <h3 className="text-sm font-bold text-slate-800 mb-3">Tags</h3>
-                  
                   <div className="flex flex-wrap gap-2 mb-4">
                     {contact.tags && contact.tags.length > 0 ? (
                       contact.tags.map(tag => (
                         <span key={tag.tag_id} className="group flex items-center bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium px-2 py-1 rounded-md">
                           {tag.tag_name}
-                          <button onClick={() => handleRemoveTag(tag.tag_id)} className="ml-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                            ×
-                          </button>
+                          <button onClick={() => handleRemoveTag(tag.tag_id)} className="ml-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">×</button>
                         </span>
                       ))
                     ) : (
@@ -821,34 +989,20 @@ function ContactProfile() {
                   </div>
 
                   <form onSubmit={handleAddTag} className="flex gap-2">
-                    <input 
-                      type="text" 
-                      value={newTagInput}
-                      onChange={(e) => setNewTagInput(e.target.value)}
-                      list="existing-tags"
-                      placeholder="Add or create a tag..." 
-                      className="flex-1 px-3 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
+                    <input type="text" value={newTagInput} onChange={(e) => setNewTagInput(e.target.value)} list="existing-tags" placeholder="Add or create a tag..." className="flex-1 px-3 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                     <datalist id="existing-tags">
-                      {allTags.map(tag => (
-                        <option key={tag.tag_id} value={tag.tag_name} />
-                      ))}
+                      {allTags.map(tag => <option key={tag.tag_id} value={tag.tag_name} />)}
                     </datalist>
-                    <button type="submit" className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded text-sm font-medium transition-colors">
-                      Add
-                    </button>
+                    <button type="submit" className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded text-sm font-medium transition-colors">Add</button>
                   </form>
                 </div>
               </>
             )}
-
           </div>
         </div>
 
         {/* RIGHT COLUMN: The Main Stage (Tabs) */}
-        <div className="md:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          
-          {/* Tab Navigation */}
+        <div className="md:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden h-fit">
           <div className="flex border-b border-slate-200 bg-slate-50">
             <button onClick={() => setActiveTab('deals')} className={`flex-1 py-4 text-sm font-medium transition-colors ${activeTab === 'deals' ? 'border-b-2 border-blue-600 text-blue-600 bg-white' : 'text-slate-500 hover:text-slate-700'}`}>
               Active Deals ({deals.length})
@@ -858,7 +1012,6 @@ function ContactProfile() {
             </button>
           </div>
 
-          {/* Tab Content */}
           <div className="p-6">
             {activeTab === 'deals' && (
               <div className="space-y-4">
@@ -866,11 +1019,7 @@ function ContactProfile() {
                   <p className="text-slate-500 italic">No active deals for this contact.</p>
                 ) : (
                   deals.map(deal => (
-                    <div 
-                      key={deal.deal_id} 
-                      onClick={() => navigate(`/deals/${deal.deal_id}`)}
-                      className="p-4 border border-slate-200 rounded-lg hover:border-blue-300 transition-colors bg-slate-50 flex justify-between items-center cursor-pointer"
-                    >
+                    <div key={deal.deal_id} onClick={() => navigate(`/deals/${deal.deal_id}`)} className="p-4 border border-slate-200 rounded-lg hover:border-blue-300 transition-colors bg-slate-50 flex justify-between items-center cursor-pointer">
                       <div>
                         <p className="font-bold text-slate-800 hover:text-blue-600 transition-colors">{deal.deal_name}</p>
                         <p className="text-sm text-slate-500">{deal.stage}</p>
@@ -886,25 +1035,12 @@ function ContactProfile() {
 
             {activeTab === 'notes' && (
               <div className="space-y-6">
-                {/* The Input Area */}
                 <div className="space-y-3">
-                  <textarea 
-                    value={newNoteContent}
-                    onChange={(e) => setNewNoteContent(e.target.value)}
-                    className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none h-24" 
-                    placeholder="Log a call, write a note, or document a timeline event..."
-                  ></textarea>
+                  <textarea value={newNoteContent} onChange={(e) => setNewNoteContent(e.target.value)} className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none h-24" placeholder="Log a call, write a note, or document a timeline event..."></textarea>
                   <div className="flex justify-end">
-                    <button 
-                      onClick={handleAddNote}
-                      className="bg-slate-800 hover:bg-slate-900 text-white px-6 py-2 rounded-lg font-medium transition-colors shadow-sm"
-                    >
-                      Save Note
-                    </button>
+                    <button onClick={handleAddNote} className="bg-slate-800 hover:bg-slate-900 text-white px-6 py-2 rounded-lg font-medium transition-colors shadow-sm">Save Note</button>
                   </div>
                 </div>
-
-                {/* The Timeline Feed */}
                 <div className="space-y-4 pt-4 border-t border-slate-100">
                   {data.notes && data.notes.length === 0 ? (
                     <p className="text-slate-500 italic text-center py-4">No notes recorded yet.</p>
@@ -912,9 +1048,7 @@ function ContactProfile() {
                     data.notes.map(note => (
                       <div key={note.note_id} className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                         <p className="text-slate-800 whitespace-pre-wrap">{note.content}</p>
-                        <p className="text-xs text-slate-500 mt-2 font-medium">
-                          {new Date(note.created_at).toLocaleString()}
-                        </p>
+                        <p className="text-xs text-slate-500 mt-2 font-medium">{new Date(note.created_at).toLocaleString()}</p>
                       </div>
                     ))
                   )}
@@ -922,7 +1056,6 @@ function ContactProfile() {
               </div>
             )}
           </div>
-
         </div>
       </div>
     </div>
@@ -1150,12 +1283,14 @@ function Contacts() {
   );
 }
 
-// 6. The Deal Profile (Deep Dive) Component
+// ==========================================
+// DEAL PROFILE (PHASE 4 EXPANDED)
+// ==========================================
 function DealProfile() {
   const { id } = useParams();
   const [data, setData] = useState(null);
   
-  // New States for the Compliance Engine
+  // Compliance Engine
   const [dealDocs, setDealDocs] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -1164,33 +1299,36 @@ function DealProfile() {
   // Editing States
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState({});
-  const [rejectionNotes, setRejectionNotes] = useState({}); // Stores draft notes before saving
+  const [rejectionNotes, setRejectionNotes] = useState({}); 
+
+  // NEW: Co-Pilot States
+  const [teamRoster, setTeamRoster] = useState([]);
+  const [selectedPartnerId, setSelectedPartnerId] = useState("");
 
   const { user } = useAuth();
   const AGENT_ID = user?.id;
 
   useEffect(() => {
-    // We fetch the Deal, the Master Templates, AND the cloned Documents all at once
     const fetchDeal = axios.get(`http://127.0.0.1:8080/deals/${id}`);
     const fetchTemplates = axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/templates/`);
     const fetchDocs = axios.get(`http://127.0.0.1:8080/deals/${id}/documents/`);
+    // Fetch the team roster so we can select agents to partner with
+    const fetchRoster = axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/roster/`);
 
-    Promise.all([fetchDeal, fetchTemplates, fetchDocs])
+    Promise.all([fetchDeal, fetchTemplates, fetchDocs, fetchRoster])
       .then(responses => {
         setData(responses[0].data);
-        
-        // Only show templates that match this deal's type (Buyer/Seller/Lease)
         const dealType = responses[0].data.deal.deal_type;
         setTemplates(responses[1].data.filter(t => t.deal_type === dealType));
-        
         setDealDocs(responses[2].data);
+        setTeamRoster(responses[3].data);
         setIsLoading(false);
       })
       .catch(error => {
         console.error("Error fetching deal ecosystem:", error);
         setIsLoading(false);
       });
-  }, [id]);
+  }, [id, AGENT_ID]);
 
   const handleToggleTask = (taskId, currentStatus) => {
     const newStatus = currentStatus === "True" ? "False" : "True";
@@ -1208,6 +1346,7 @@ function DealProfile() {
       deal_name: data.deal.deal_name || '',
       estimated_value: data.deal.estimated_value || '',
       commission_rate: data.deal.commission_rate || '',
+      financing_type: data.deal.financing_type || '', // Phase 4 Addition
       expected_close_date: data.deal.expected_close_date ? new Date(data.deal.expected_close_date).toISOString().split('T')[0] : ''
     });
     setIsEditing(true);
@@ -1226,28 +1365,42 @@ function DealProfile() {
       .catch(error => console.error("Error updating deal:", error));
   };
 
+  // NEW: The Co-Pilot Assignment Logic
+  const handleAddPartner = () => {
+    if (!selectedPartnerId) return;
+    
+    axios.post(`http://127.0.0.1:8080/deals/${id}/partners/${selectedPartnerId}`)
+      .then(response => {
+        // Optimistically add the partner to the UI
+        const newPartner = teamRoster.find(agent => agent.user_id === selectedPartnerId);
+        setData(prev => ({
+          ...prev,
+          partners: [...(prev.partners || []), newPartner]
+        }));
+        setSelectedPartnerId(""); // Reset dropdown
+      })
+      .catch(error => {
+         console.error("Error adding partner:", error);
+         alert(error.response?.data?.detail || "Could not add partner.");
+      });
+  };
+
   // ==========================================
   // COMPLIANCE ENGINE FUNCTIONS
   // ==========================================
   const handleApplyTemplate = () => {
     if (!selectedTemplateId) return;
-    
     axios.post(`http://127.0.0.1:8080/deals/${id}/apply-template/${selectedTemplateId}`)
-      .then(response => setDealDocs(response.data)) // Instantly renders the new checklist
+      .then(response => setDealDocs(response.data)) 
       .catch(error => console.error("Error cloning template:", error));
   };
 
   const handleDocStatusChange = (docId, newStatus) => {
-    // Optimistic UI Update
     setDealDocs(currentDocs => currentDocs.map(doc => 
       doc.doc_id === docId ? { ...doc, status: newStatus } : doc
     ));
-
-    // If they change it to anything other than rejected, we clear the notes
     const payload = { new_status: newStatus };
-    if (newStatus !== "Rejected") {
-      payload.reviewer_notes = ""; 
-    }
+    if (newStatus !== "Rejected") payload.reviewer_notes = ""; 
 
     axios.patch(`http://127.0.0.1:8080/deal-documents/${docId}/status`, payload)
       .catch(error => console.error("Database sync failed:", error));
@@ -1255,25 +1408,19 @@ function DealProfile() {
 
   const handleSaveRejectionNote = (docId) => {
     const note = rejectionNotes[docId] || "";
-    
-    // Update the local state so the note displays immediately
     setDealDocs(currentDocs => currentDocs.map(doc => 
       doc.doc_id === docId ? { ...doc, reviewer_notes: note } : doc
     ));
-
     axios.patch(`http://127.0.0.1:8080/deal-documents/${docId}/status`, { 
       new_status: "Rejected", 
       reviewer_notes: note 
     }).then(() => {
-      // Clear the draft input state
       setRejectionNotes(prev => ({ ...prev, [docId]: "" }));
     });
   };
 
  const handleFileUpload = (docId, file) => {
     if (!file) return;
-
-    // We use FormData because we are sending a physical file, not JSON
     const formData = new FormData();
     formData.append("file", file);
 
@@ -1281,7 +1428,6 @@ function DealProfile() {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
     .then(response => {
-      // Optimistically update the UI with the new file URL and "Uploaded" status
       setDealDocs(currentDocs => currentDocs.map(doc => 
         doc.doc_id === docId ? response.data : doc
       ));
@@ -1295,11 +1441,10 @@ function DealProfile() {
   if (isLoading) return <div className="p-8 text-slate-500 animate-pulse">Loading Deal File...</div>;
   if (!data || !data.deal) return <div className="p-8 text-red-500">Deal not found.</div>;
 
-  const { deal, contact, tasks } = data;
+  const { deal, contact, tasks, partners } = data;
   const activeTasks = tasks.filter(t => t.is_completed === "False");
   const completedTasks = tasks.filter(t => t.is_completed === "True");
 
-  // Helper for status badge colors
   const getStatusColor = (status) => {
     switch(status) {
       case 'Approved': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
@@ -1331,7 +1476,7 @@ function DealProfile() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* LEFT COLUMN: Deal Data & Client Info */}
+        {/* LEFT COLUMN */}
         <div className="lg:col-span-1 space-y-6">
           
           {/* Financials / Edit Card */}
@@ -1357,6 +1502,20 @@ function DealProfile() {
                     <input type="text" placeholder="3%" value={editFormData.commission_rate} onChange={e => setEditFormData({...editFormData, commission_rate: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
                   </div>
                 </div>
+                
+                {/* Phase 4 Field */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Financing Type</label>
+                  <select value={editFormData.financing_type} onChange={e => setEditFormData({...editFormData, financing_type: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white">
+                    <option value="">Select Financing...</option>
+                    <option value="Conventional">Conventional</option>
+                    <option value="FHA">FHA</option>
+                    <option value="VA">VA</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Seller Carry">Seller Carry</option>
+                  </select>
+                </div>
+
                 <div className="flex justify-end space-x-2 pt-4">
                   <button type="button" onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded font-medium transition-colors">Cancel</button>
                   <button type="submit" className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors">Save</button>
@@ -1377,17 +1536,69 @@ function DealProfile() {
                         : 'TBD'}
                     </p>
                   </div>
-                  <div>
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Est. Value</p>
-                    <p className="text-slate-800 font-medium">{deal.estimated_value || '—'}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Est. Value</p>
+                      <p className="text-slate-800 font-medium">{deal.estimated_value || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Commission Rate</p>
+                      <p className="text-slate-800 font-medium">{deal.commission_rate || '—'}</p>
+                    </div>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Commission Rate</p>
-                    <p className="text-slate-800 font-medium">{deal.commission_rate || '—'}</p>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Financing</p>
+                    <p className="text-slate-800 font-medium">{deal.financing_type || '—'}</p>
                   </div>
                 </div>
               </>
             )}
+          </div>
+
+          {/* NEW: Co-Pilot UI Card */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <h3 className="text-sm font-bold text-slate-800 mb-4 border-b pb-2">Deal Partners</h3>
+            
+            {/* Display Active Partners */}
+            <div className="space-y-3 mb-4">
+              {partners && partners.length > 0 ? (
+                partners.map(partner => (
+                  <div key={partner.user_id} className="flex items-center space-x-3 p-2 bg-slate-50 rounded-lg border border-slate-100">
+                    <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-xs">
+                      {partner.first_name[0]}{partner.last_name ? partner.last_name[0] : ''}
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-800 text-sm leading-tight">{partner.first_name} {partner.last_name}</p>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wider">{partner.role}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-500 italic">No co-agents assigned.</p>
+              )}
+            </div>
+
+            {/* Invite a New Partner */}
+            <div className="flex space-x-2 pt-4 border-t border-slate-100">
+              <select 
+                value={selectedPartnerId}
+                onChange={(e) => setSelectedPartnerId(e.target.value)}
+                className="flex-1 px-3 py-2 border border-slate-300 rounded text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">Select agent...</option>
+                {teamRoster.map(agent => (
+                  <option key={agent.user_id} value={agent.user_id}>
+                    {agent.first_name} {agent.last_name}
+                  </option>
+                ))}
+              </select>
+              <button 
+                onClick={handleAddPartner}
+                className="bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 rounded text-sm font-medium transition-colors"
+              >
+                Add
+              </button>
+            </div>
           </div>
 
           {/* The Linked Client Card */}
@@ -1459,7 +1670,7 @@ function DealProfile() {
                                 📄 View PDF
                               </a>
                             ) : (
-                              /* If no file, show an upload button (Hidden input + clickable label wrapper) */
+                              /* If no file, show an upload button */
                               <label className="text-xs font-semibold text-slate-500 hover:text-blue-600 transition-colors cursor-pointer flex items-center">
                                 <input 
                                   type="file" 
@@ -1494,7 +1705,7 @@ function DealProfile() {
                                 <strong>MCA Note:</strong> {doc.reviewer_notes}
                               </p>
                               <button 
-                                onClick={() => handleSaveRejectionNote(doc.doc_id)} // Saving an empty string clears it if they want to edit
+                                onClick={() => handleSaveRejectionNote(doc.doc_id)}
                                 className="text-xs text-slate-500 hover:text-blue-600 ml-2 mt-1"
                               >
                                 Edit
@@ -1519,7 +1730,6 @@ function DealProfile() {
                           )}
                         </div>
                       )}
-
                     </li>
                   ))}
                 </ul>
@@ -1801,6 +2011,7 @@ function AppContent() {
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/contacts/:id" element={<ContactProfile />} />
           <Route path="/deals/:id" element={<DealProfile />} />
+          <Route path="/profile" element={<AgentProfile />} />
           
           {/* Protect the route directly as a secondary defense */}
           <Route path="/settings" element={user.role === 'Broker' ? <ComplianceSettings /> : <Navigate to="/" />} />

@@ -92,6 +92,28 @@ def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return new_user
 
+@router.get("/users/{user_id}", response_model=schemas.UserResponse)
+def get_user_profile(user_id: UUID, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return user
+
+@router.patch("/users/{user_id}", response_model=schemas.UserResponse)
+def update_user_profile(user_id: UUID, user_update: schemas.UserUpdate, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    
+    # Apply only the fields the user actually changed
+    update_data = user_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(user, key, value)
+        
+    db.commit()
+    db.refresh(user)
+    return user
+
 @router.post("/login", response_model=schemas.Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     # 1. Find the user by email
@@ -112,14 +134,14 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/users/{user_id}/roster/", response_model=List[schemas.UserResponse])
-def get_broker_roster(user_id: UUID, db: Session = Depends(get_db)):
+def get_team_roster(user_id: UUID, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.user_id == user_id).first()
-    if not user or user.role != "Broker":
-        raise HTTPException(status_code=403, detail="Only Managing Brokers can view the team roster.")
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
     
-    # Return all agents linked to this broker (excluding the broker themselves)
+    # Unlocked: Both Brokers and Agents can now see the people in their specific brokerage
     roster = db.query(models.User).filter(
-        models.User.brokerage_id == user.user_id,
+        models.User.brokerage_id == user.brokerage_id,
         models.User.user_id != user.user_id
     ).all()
     
@@ -314,10 +336,10 @@ def get_deal_details(deal_id: UUID, db: Session = Depends(get_db)):
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found.")
     
-    # 2. Fetch the associated client (so we can display their name and phone number)
+    # 2. Fetch the associated client
     contact = db.query(models.Contact).filter(models.Contact.contact_id == deal.contact_id).first()
     
-    # 3. Fetch all compliance tasks strictly linked to this transaction
+    # 3. Fetch all compliance tasks
     tasks = db.query(models.Task).filter(
         models.Task.deal_id == deal_id
     ).order_by(models.Task.due_date.asc()).all()
@@ -326,7 +348,8 @@ def get_deal_details(deal_id: UUID, db: Session = Depends(get_db)):
     return {
         "deal": deal,
         "contact": contact,
-        "tasks": tasks
+        "tasks": tasks,
+        "partners": deal.partners # <-- NEW PHASE 4 ADDITION
     }
 
 @router.post("/deals/{deal_id}/apply-template/{template_id}", response_model=List[schemas.DealDocumentResponse])
@@ -431,6 +454,23 @@ def upload_document_file(doc_id: UUID, file: UploadFile = File(...), db: Session
     db.refresh(doc)
     
     return doc
+
+@router.post("/deals/{deal_id}/partners/{partner_id}")
+def add_deal_partner(deal_id: UUID, partner_id: UUID, db: Session = Depends(get_db)):
+    deal = db.query(models.Deal).filter(models.Deal.deal_id == deal_id).first()
+    partner = db.query(models.User).filter(models.User.user_id == partner_id).first()
+    
+    if not deal or not partner:
+        raise HTTPException(status_code=404, detail="Deal or User not found.")
+        
+    # Prevent adding the same agent twice
+    if partner in deal.partners:
+        raise HTTPException(status_code=400, detail="Agent is already a partner on this deal.")
+        
+    deal.partners.append(partner)
+    db.commit()
+    
+    return {"status": "success", "message": f"{partner.first_name} added as a co-pilot."}
 
 # ==========================================
 # TASK ROUTES (The Daily Dashboard)

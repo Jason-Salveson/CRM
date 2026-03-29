@@ -1,7 +1,7 @@
 # schemas.py
 from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 from uuid import UUID
 
 # ==========================================
@@ -28,13 +28,20 @@ class TagResponse(TagBase):
 class ContactBase(BaseModel):
     first_name: str = Field(..., max_length=50)
     last_name: Optional[str] = Field(default=None, max_length=50)
-    email: Optional[EmailStr] = None # Automatically validates it has an @ symbol
+    email: Optional[EmailStr] = None 
     phone: Optional[str] = Field(default=None, max_length=20)
     physical_address: Optional[str] = None
-    mrea_category: str = Field(..., pattern="^(Met|Haven't Met)$") # Enforces MREA strictness
+    mrea_category: str = Field(..., pattern="^(Met|Haven't Met)$") 
     lead_source: Optional[str] = Field(default=None, max_length=100)
     notes: Optional[str] = None
     spouse_id: Optional[UUID] = None
+    
+    # NEW: Phase 4
+    mailing_address: Optional[str] = None
+    alternate_phone: Optional[str] = None
+    birthday: Optional[date] = None
+    anniversary: Optional[date] = None
+    hobbies: Optional[str] = None
 
 class ContactCreate(ContactBase):
     pass
@@ -53,7 +60,18 @@ class ContactUpdate(BaseModel):
     last_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    physical_address: Optional[str] = None
     mrea_category: Optional[str] = None
+    lead_source: Optional[str] = None
+    notes: Optional[str] = None
+    spouse_id: Optional[UUID] = None
+    
+    # Phase 4 
+    mailing_address: Optional[str] = None
+    alternate_phone: Optional[str] = None
+    birthday: Optional[date] = None
+    anniversary: Optional[date] = None
+    hobbies: Optional[str] = None
 
 # ==========================================
 # USER SCHEMAS (The Agents)
@@ -63,6 +81,13 @@ class UserBase(BaseModel):
     last_name: str = Field(..., max_length=50)
     email: EmailStr
     role: Optional[str] = Field(default="Agent", pattern="^(Agent|Broker|Admin)$")
+    
+    # NEW: Phase 4
+    profile_pic_url: Optional[str] = None
+    license_number: Optional[str] = None
+    birthday: Optional[date] = None
+    bio: Optional[str] = None
+    website: Optional[str] = None
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8) # Require an 8-character password to register
@@ -74,6 +99,15 @@ class UserResponse(UserBase):
     invite_code: Optional[str] = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+class UserUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    profile_pic_url: Optional[str] = None
+    license_number: Optional[str] = None
+    birthday: Optional[date] = None
+    bio: Optional[str] = None
+    website: Optional[str] = None
 
 # NEW: Schema for the JWT Token we will send to React
 class Token(BaseModel):
@@ -91,6 +125,10 @@ class DealBase(BaseModel):
     estimated_value: Optional[str] = None
     commission_rate: Optional[str] = None
     expected_close_date: Optional[datetime] = None
+    
+    # NEW: Phase 4
+    co_client_id: Optional[UUID] = None
+    financing_type: Optional[str] = None
 
 class DealCreate(DealBase):
     pass
@@ -112,6 +150,10 @@ class DealUpdate(BaseModel):
     estimated_value: Optional[str] = None
     commission_rate: Optional[str] = None
     expected_close_date: Optional[datetime] = None
+    
+    # Phase 4
+    co_client_id: Optional[UUID] = None
+    financing_type: Optional[str] = None
     
 class DealStageUpdate(BaseModel):
     new_stage: str = Field(..., pattern="^(Lead|Contact|Appointment|Active|Under Contract|Closed)$")
