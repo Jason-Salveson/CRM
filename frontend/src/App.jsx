@@ -1064,6 +1064,28 @@ function DealProfile() {
     });
   };
 
+ const handleFileUpload = (docId, file) => {
+    if (!file) return;
+
+    // We use FormData because we are sending a physical file, not JSON
+    const formData = new FormData();
+    formData.append("file", file);
+
+    axios.post(`http://127.0.0.1:8080/deal-documents/${docId}/upload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    .then(response => {
+      // Optimistically update the UI with the new file URL and "Uploaded" status
+      setDealDocs(currentDocs => currentDocs.map(doc => 
+        doc.doc_id === docId ? response.data : doc
+      ));
+    })
+    .catch(error => {
+      console.error("Upload failed:", error);
+      alert("Failed to upload file. Ensure it is a valid PDF.");
+    });
+  }; 
+
   if (isLoading) return <div className="p-8 text-slate-500 animate-pulse">Loading Deal File...</div>;
   if (!data || !data.deal) return <div className="p-8 text-red-500">Deal not found.</div>;
 
@@ -1220,10 +1242,31 @@ function DealProfile() {
                       <div className="flex justify-between items-start mb-2">
                         <div>
                           <p className="font-bold text-slate-800 text-sm">{doc.document_name}</p>
-                          {doc.is_required === 'True' && (
-                            <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Required</span>
-                          )}
+                          <div className="flex items-center space-x-3 mt-1">
+                            {doc.is_required === 'True' && (
+                              <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Required</span>
+                            )}
+                            
+                            {/* If a file exists, show a link to view it */}
+                            {doc.file_url ? (
+                              <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors flex items-center">
+                                📄 View PDF
+                              </a>
+                            ) : (
+                              /* If no file, show an upload button (Hidden input + clickable label wrapper) */
+                              <label className="text-xs font-semibold text-slate-500 hover:text-blue-600 transition-colors cursor-pointer flex items-center">
+                                <input 
+                                  type="file" 
+                                  accept=".pdf" 
+                                  className="hidden" 
+                                  onChange={(e) => handleFileUpload(doc.doc_id, e.target.files[0])} 
+                                />
+                                📎 Attach PDF
+                              </label>
+                            )}
+                          </div>
                         </div>
+                        
                         <select
                           value={doc.status}
                           onChange={(e) => handleDocStatusChange(doc.doc_id, e.target.value)}

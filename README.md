@@ -1,3 +1,26 @@
+# MREA Agent OS: Enterprise Real Estate CRM
+
+Agent OS is a full-stack, enterprise-grade Real Estate CRM and Workflow Engine. Built to the specifications of the Millionaire Real Estate Agent (MREA) model, this platform graduates from basic contact management into a legally protective, automated transaction system. 
+
+It tracks leads from their first contact all the way through broker compliance and final closing, utilizing a dynamic database architecture that can adapt to any state's real estate laws without requiring codebase updates.
+
+### Core Architecture & Features:
+* **The Databank (Entity Management):** A relational client tracking system with "Find or Create" dynamic tagging, chronological timeline notes, and MREA-strict categorization.
+* **The Deal Pipeline (State Machine):** A responsive, drag-and-drop Kanban board that tracks transaction states. Moving a deal to a new stage automatically triggers backend workflow automations.
+* **The Automation Engine:** A backend service that calculates and generates time-sensitive, stage-specific tasks (e.g., "Schedule Inspection") to keep agents perfectly on track.
+* **Broker Compliance CMS:** A dynamic template engine allowing brokers to create custom, transaction-specific required document checklists (e.g., "Standard AZ Buyer"). 
+* **The Deal Instance Cloner:** Applies master templates to specific transactions, creating a localized checklist where agents can upload physical PDF contracts.
+* **The Review Feedback Loop:** Features a Keller Williams-style compliance review flow (Missing, Uploaded, Approved, Rejected) with database-linked MCA rejection notes.
+
+### Tech Stack:
+* **Frontend:** React, Vite, Tailwind CSS v4, React Router, Hello-Pangea DND
+* **Backend:** Python, FastAPI, Uvicorn
+* **Database:** PostgreSQL, SQLAlchemy (ORM), Pydantic (Data Validation)
+
+---
+
+## Development Log
+
 Day 1 Architecture & Feature Summary: Agent OS
 
 Database Architecture (PostgreSQL & SQLAlchemy):

@@ -190,6 +190,7 @@ class DealDocumentBase(BaseModel):
     status: Optional[str] = "Missing"
     is_required: Optional[str] = "True"
     reviewer_notes: Optional[str] = None
+    file_url: Optional[str] = None
 
 class DealDocumentResponse(DealDocumentBase):
     doc_id: UUID

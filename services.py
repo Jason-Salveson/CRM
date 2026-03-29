@@ -73,8 +73,12 @@ def trigger_stage_automations(db: Session, deal: models.Deal):
     db.commit()
 
     # ==========================================
-    # PHASE 2: GENERATE NEW TASKS
+    # PHASE 2: GENERATE NEW TASKS (DISABLED)
     # ==========================================
+    # We are disabling the hardcoded task generation so they stop cluttering the dashboard.
+    # When ready, this can be upgraded to a dynamic template engine like the Document Checklists.
+    
+    """
     new_tasks = []
     if deal.stage == "Appointment":
         new_tasks = AUTOMATED_TASKS["Appointment"]
@@ -84,10 +88,8 @@ def trigger_stage_automations(db: Session, deal: models.Deal):
         new_tasks = AUTOMATED_TASKS["Under Contract"]
 
     for task_template in new_tasks:
-        # CONTEXT FIX: Append the deal name to the task so it's identifiable on the dashboard
         formatted_task_name = f"{task_template['name']} ({deal.deal_name})"
         
-        # DUPLICATE FIX: Only create the task if it doesn't already exist and is incomplete
         existing_task = db.query(models.Task).filter(
             models.Task.deal_id == deal.deal_id,
             models.Task.task_name == formatted_task_name,
@@ -105,3 +107,4 @@ def trigger_stage_automations(db: Session, deal: models.Deal):
             db.add(task)
     
     db.commit()
+    """

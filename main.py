@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware # <-- NEW IMPORT
 import models
 from database import engine
 import routes 
+import os
+from fastapi.staticfiles import StaticFiles
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -25,6 +27,11 @@ app.add_middleware(
     allow_methods=["*"], # Allows GET, POST, PATCH, DELETE
     allow_headers=["*"],
 )
+
+# Ensure the uploads directory exists on your computer
+os.makedirs("uploads", exist_ok=True)
+# This tells FastAPI to serve the raw files in this folder to the browser
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.include_router(routes.router)
 

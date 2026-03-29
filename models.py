@@ -177,6 +177,7 @@ class DealDocument(Base):
     status = Column(String(50), CheckConstraint("status IN ('Missing', 'Uploaded', 'Approved', 'Rejected')", name="chk_document_status"), default="Missing")
     is_required = Column(String(5), default="True")
     reviewer_notes = Column(Text, nullable=True)
+    file_url = Column(String(500), nullable=True)
     
     # We will eventually add a file_url column here when you are ready to upload PDFs!
     

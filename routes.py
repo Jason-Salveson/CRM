@@ -1,11 +1,13 @@
 # routes.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 from sqlalchemy.orm import Session
 from uuid import UUID
 import services
 import models, schemas
 from database import get_db
 from typing import List
+import shutil
+import os
 
 # Initialize the router
 router = APIRouter()
@@ -308,6 +310,37 @@ def update_deal(deal_id: UUID, deal_update: schemas.DealUpdate, db: Session = De
     db.commit()
     db.refresh(deal)
     return deal
+
+@router.post("/deal-documents/{doc_id}/upload", response_model=schemas.DealDocumentResponse)
+def upload_document_file(doc_id: UUID, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    doc = db.query(models.DealDocument).filter(models.DealDocument.doc_id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    
+    # Optional Security: Ensure it's a PDF (you can remove this if you want to allow images)
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+
+    # Create a safe, unique filename so documents don't overwrite each other
+    file_extension = file.filename.split(".")[-1]
+    safe_filename = f"{doc_id}.{file_extension}"
+    file_path = f"uploads/{safe_filename}"
+    
+    # Save the physical file to your hard drive
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    # Update the database
+    doc.file_url = f"http://127.0.0.1:8080/uploads/{safe_filename}"
+    doc.status = "Uploaded" # Auto-progress the pipeline!
+    
+    # If it was rejected previously, clear the old notes since they provided a new file
+    doc.reviewer_notes = None 
+    
+    db.commit()
+    db.refresh(doc)
+    
+    return doc
 
 # ==========================================
 # TASK ROUTES (The Daily Dashboard)
