@@ -134,3 +134,27 @@ The Deal Instance Engine: * Engineered a relational backend cloning mechanism. W
 Enterprise Review Loop: * Replaced binary statuses with a Keller Williams-style compliance workflow (Missing, Uploaded, Approved, Rejected).
 
 Integrated a database-level feedback loop, allowing reviewers to attach specific text notes to rejected documents (e.g., "Missing initials on page 2") for rapid correction.
+
+### Phase 3 Architecture Summary: Security & Multi-Tenant RBAC
+
+**Authentication & Cryptography:**
+* Replaced hardcoded IDs with a robust JWT (JSON Web Token) authentication system.
+* Implemented native `bcrypt` password hashing to securely store user credentials in PostgreSQL.
+* Built a unified React AuthScreen for seamless Login and Registration.
+* Configured Axios interceptors to automatically attach the JWT bearer token to every API request.
+
+**Multi-Tenant Routing (The Invite Engine):**
+* Built a dynamic routing engine using `invite_code` relationships.
+* Managing Brokers auto-generate a unique, mathematically verified 6-character code upon registration.
+* Agents are forced to provide this code during registration, automatically linking them to their Broker's `brokerage_id` in the database.
+
+**Role-Based Access Control (RBAC):**
+* Implemented FastAPI dependency injection (The Bouncer) to restrict specific endpoints (like template creation and roster viewing) to the "Broker" role.
+* Built conditional UI rendering in React to hide administrative tabs from standard Agents.
+
+**Cross-Entity Automation:**
+* Engineered a `db.flush()` sequence so that the moment an Agent registers, they are instantly injected into their Managing Broker's Databank as a Contact.
+* The system automatically generates and applies a "Brokerage Agent" tag to these contacts for instant Broker roster filtering.
+
+**The Template Cascade:**
+* Upgraded the compliance template API so that Agents automatically inherit and clone the master document checklists built by their specific Managing Broker.

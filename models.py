@@ -24,6 +24,10 @@ class User(Base):
     first_name = Column(String(50), nullable=False)
     last_name = Column(String(50), nullable=False)
     email = Column(String(255), unique=True, nullable=False)
+    hashed_password = Column(String(255), nullable=True) 
+    role = Column(String(50), CheckConstraint("role IN ('Agent', 'Broker', 'Admin')", name="chk_user_role"), default="Agent")
+    brokerage_id = Column(UUID(as_uuid=True), nullable=True)
+    invite_code = Column(String(20), unique=True, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     deals = relationship("Deal", back_populates="owner", cascade="all, delete-orphan")
 

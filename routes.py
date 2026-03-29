@@ -8,29 +8,122 @@ from database import get_db
 from typing import List
 import shutil
 import os
+import auth
+from fastapi.security import OAuth2PasswordRequestForm
+import string
+import random
 
 # Initialize the router
 router = APIRouter()
 
 # ==========================================
-# USER ROUTES
+# AUTHENTICATION & USER ROUTES
 # ==========================================
-@router.post("/users/", response_model=schemas.UserResponse)
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    # 1. Security Check: Does this email already exist?
+@router.post("/register", response_model=schemas.UserResponse)
+def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered.")
     
-    # 2. Conversion: Turn the Pydantic schema into a SQLAlchemy model
-    new_user = models.User(**user.model_dump())
+    hashed_pwd = auth.get_password_hash(user.password)
+    user_data = user.model_dump(exclude={'password', 'invite_code'}) 
     
-    # 3. Execution: Save to the database
-    db.add(new_user)
+    new_user = models.User(**user_data, hashed_password=hashed_pwd)
+    
+    if user.role == "Broker":
+        while True:
+            code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            existing_code = db.query(models.User).filter(models.User.invite_code == code).first()
+            if not existing_code:
+                break 
+                
+        new_user.invite_code = code
+        db.add(new_user)
+        db.flush() # Stage the user in the database without finalizing the save
+        
+        new_user.brokerage_id = new_user.user_id 
+        
+    elif user.role == "Agent":
+        if not user.invite_code:
+            raise HTTPException(status_code=400, detail="Agents must provide a Brokerage Invite Code.")
+            
+        broker = db.query(models.User).filter(models.User.invite_code == user.invite_code, models.User.role == "Broker").first()
+        if not broker:
+            raise HTTPException(status_code=404, detail="Invalid Brokerage Invite Code.")
+            
+        new_user.brokerage_id = broker.user_id
+        db.add(new_user)
+        db.flush() # Stage the new agent
+        
+        # ==========================================
+        # AUTOMATIC BROKER DATABANK INJECTION
+        # ==========================================
+        # 1. Create a Contact record owned by the Broker
+        agent_contact = models.Contact(
+            user_id=broker.user_id,
+            first_name=new_user.first_name,
+            last_name=new_user.last_name,
+            email=new_user.email,
+            mrea_category="Met", # They definitely met!
+            lead_source="System Registration"
+        )
+        
+        # 2. Find or create the "Brokerage Agent" tag for the Broker
+        tag_name = "Brokerage Agent"
+        broker_tag = db.query(models.Tag).filter(
+            models.Tag.tag_name.ilike(tag_name), 
+            models.Tag.user_id == broker.user_id
+        ).first()
+        
+        if not broker_tag:
+            broker_tag = models.Tag(
+                user_id=broker.user_id, 
+                tag_name=tag_name,
+                color_hex="#8b5cf6" # Give it a sleek purple badge
+            )
+            db.add(broker_tag)
+            
+        # 3. Link the tag to the new contact and stage it
+        agent_contact.tags.append(broker_tag)
+        db.add(agent_contact)
+
+    # Finalize the entire transaction at once
     db.commit()
-    db.refresh(new_user) # Grabs the new auto-generated UUID and timestamps
-    
+    db.refresh(new_user)
     return new_user
+
+@router.post("/login", response_model=schemas.Token)
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # 1. Find the user by email
+    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    
+    # 2. Verify existence and password
+    if not user or not auth.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    
+    # 3. Generate the digital ID badge (JWT) - NOW WITH INVITE CODE
+    token_data = {
+        "sub": str(user.user_id), 
+        "role": user.role,
+        "invite_code": user.invite_code or "" # Inject the code here!
+    }
+    access_token = auth.create_access_token(data=token_data)
+    
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@router.get("/users/{user_id}/roster/", response_model=List[schemas.UserResponse])
+def get_broker_roster(user_id: UUID, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not user or user.role != "Broker":
+        raise HTTPException(status_code=403, detail="Only Managing Brokers can view the team roster.")
+    
+    # Return all agents linked to this broker (excluding the broker themselves)
+    roster = db.query(models.User).filter(
+        models.User.brokerage_id == user.user_id,
+        models.User.user_id != user.user_id
+    ).all()
+    
+    return roster
 
 # ==========================================
 # CONTACT ROUTES
@@ -54,15 +147,12 @@ def create_contact(user_id: UUID, contact: schemas.ContactCreate, db: Session = 
 
 @router.get("/users/{user_id}/contacts/", response_model=List[schemas.ContactResponse])
 def get_user_contacts(user_id: UUID, db: Session = Depends(get_db)):
-    # 1. Security Check
     user = db.query(models.User).filter(models.User.user_id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Agent not found.")
+        raise HTTPException(status_code=404, detail="User not found.")
     
-    # 2. Fetch all contacts for this agent
-    contacts = db.query(models.Contact).filter(models.Contact.user_id == user_id).all()
-    
-    return contacts
+    # Reverted to strict 1-to-1 ownership: You only see contacts you manually created.
+    return db.query(models.Contact).filter(models.Contact.user_id == user_id).all()
 
 @router.get("/contacts/{contact_id}")
 def get_contact_details(contact_id: UUID, db: Session = Depends(get_db)):
@@ -204,18 +294,18 @@ def update_deal_stage(deal_id: UUID, stage_update: schemas.DealStageUpdate, db: 
     
     return {"status": "success", "message": f"Deal moved to {deal.stage}. Automated tasks generated."}
 
-# Add this inside the DEAL ROUTES section in routes.py
 @router.get("/users/{user_id}/deals/", response_model=List[schemas.DealResponse])
 def get_user_deals(user_id: UUID, db: Session = Depends(get_db)):
-    # 1. Security Check
     user = db.query(models.User).filter(models.User.user_id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Agent not found.")
+        raise HTTPException(status_code=404, detail="User not found.")
     
-    # 2. Fetch all deals for this agent
-    deals = db.query(models.Deal).filter(models.Deal.user_id == user_id).all()
-    
-    return deals
+    if user.role == "Broker":
+        team_agents = db.query(models.User.user_id).filter(models.User.brokerage_id == user.brokerage_id).all()
+        team_ids = [agent.user_id for agent in team_agents]
+        return db.query(models.Deal).filter(models.Deal.user_id.in_(team_ids)).all()
+    else:
+        return db.query(models.Deal).filter(models.Deal.user_id == user_id).all()
 
 @router.get("/deals/{deal_id}")
 def get_deal_details(deal_id: UUID, db: Session = Depends(get_db)):
@@ -347,17 +437,16 @@ def upload_document_file(doc_id: UUID, file: UploadFile = File(...), db: Session
 # ==========================================
 @router.get("/users/{user_id}/tasks/", response_model=List[schemas.TaskResponse])
 def get_user_tasks(user_id: UUID, db: Session = Depends(get_db)):
-    # 1. Security Check
     user = db.query(models.User).filter(models.User.user_id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Agent not found.")
+        raise HTTPException(status_code=404, detail="User not found.")
     
-    # 2. Fetch ALL tasks for this agent (we removed the completion filter)
-    tasks = db.query(models.Task).filter(
-        models.Task.user_id == user_id
-    ).order_by(models.Task.due_date.asc()).all()
-    
-    return tasks
+    if user.role == "Broker":
+        team_agents = db.query(models.User.user_id).filter(models.User.brokerage_id == user.brokerage_id).all()
+        team_ids = [agent.user_id for agent in team_agents]
+        return db.query(models.Task).filter(models.Task.user_id.in_(team_ids)).order_by(models.Task.due_date.asc()).all()
+    else:
+        return db.query(models.Task).filter(models.Task.user_id == user_id).order_by(models.Task.due_date.asc()).all()
 
 @router.patch("/tasks/{task_id}/status")
 def update_task_status(task_id: UUID, is_completed: str, db: Session = Depends(get_db)):
@@ -375,7 +464,11 @@ def update_task_status(task_id: UUID, is_completed: str, db: Session = Depends(g
 # ==========================================
 # COMPLIANCE TEMPLATE ROUTES
 # ==========================================
-@router.post("/users/{user_id}/templates/", response_model=schemas.DocumentTemplateResponse)
+@router.post(
+    "/users/{user_id}/templates/", 
+    response_model=schemas.DocumentTemplateResponse, 
+    dependencies=[Depends(auth.get_current_broker)] # <-- THE BOUNCER MOVES HERE
+)
 def create_template(user_id: UUID, template: schemas.DocumentTemplateCreate, db: Session = Depends(get_db)):
     # Verify agent exists
     user = db.query(models.User).filter(models.User.user_id == user_id).first()
@@ -390,10 +483,22 @@ def create_template(user_id: UUID, template: schemas.DocumentTemplateCreate, db:
 
 @router.get("/users/{user_id}/templates/", response_model=List[schemas.DocumentTemplateResponse])
 def get_user_templates(user_id: UUID, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    
+    # THE CASCADE: If they are an Agent, pull from their Broker's library. 
+    # If they are a Broker, pull from their own library.
+    target_id = user.brokerage_id if user.role == "Agent" else user.user_id
+    
     # Fetches all templates and automatically includes their nested items
-    return db.query(models.DocumentTemplate).filter(models.DocumentTemplate.user_id == user_id).all()
+    return db.query(models.DocumentTemplate).filter(models.DocumentTemplate.user_id == target_id).all()
 
-@router.post("/templates/{template_id}/items/", response_model=schemas.TemplateItemResponse)
+@router.post(
+    "/templates/{template_id}/items/", 
+    response_model=schemas.TemplateItemResponse,
+    dependencies=[Depends(auth.get_current_broker)] # <-- AND HERE
+)
 def add_template_item(template_id: UUID, item: schemas.TemplateItemCreate, db: Session = Depends(get_db)):
     # Verify template exists
     template = db.query(models.DocumentTemplate).filter(models.DocumentTemplate.template_id == template_id).first()

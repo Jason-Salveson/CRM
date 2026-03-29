@@ -1,23 +1,226 @@
-import { BrowserRouter, Routes, Route, Link, useParams, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Link, useParams, useNavigate, Navigate } from 'react-router-dom';
+import { useState, useEffect, createContext, useContext } from 'react';
 import axios from 'axios';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
+// ==========================================
+// GLOBAL SECURITY CONFIGURATION
+// ==========================================
+// 1. Axios Interceptor: Automatically attaches the JWT token to every API request
+axios.interceptors.request.use(config => {
+  const token = localStorage.getItem('access_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// 2. JWT Decoder: Safely reads the token payload without needing external libraries
+const parseJwt = (token) => {
+  try {
+    return JSON.parse(atob(token.split('.')[1]));
+  } catch (e) {
+    return null;
+  }
+};
+
+// 3. The Auth Context: Holds the global user state (Agent vs Broker)
+const AuthContext = createContext();
+export const useAuth = () => useContext(AuthContext);
+
+function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      const decoded = parseJwt(token);
+      if (decoded && decoded.exp * 1000 > Date.now()) {
+        // UPDATE THIS LINE
+        setUser({ id: decoded.sub, role: decoded.role, invite_code: decoded.invite_code });
+      } else {
+        localStorage.removeItem('access_token');
+      }
+    }
+    setIsLoading(false);
+  }, []);
+
+  const login = (token) => {
+    localStorage.setItem('access_token', token);
+    const decoded = parseJwt(token);
+    // UPDATE THIS LINE
+    setUser({ id: decoded.sub, role: decoded.role, invite_code: decoded.invite_code });
+  };
+
+  const logout = () => {
+    localStorage.removeItem('access_token');
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+// ==========================================
+// AUTHENTICATION SCREEN
+// ==========================================
+function AuthScreen() {
+  const [isLogin, setIsLogin] = useState(true);
+  const { login } = useAuth();
+  const [error, setError] = useState('');
+  
+  const [formData, setFormData] = useState({
+    first_name: '', last_name: '', email: '', password: '', role: 'Agent', invite_code: ''
+  });
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    try {
+      if (isLogin) {
+        // FastAPI OAuth2 expects URL-encoded form data, not JSON
+        const params = new URLSearchParams();
+        params.append('username', formData.email);
+        params.append('password', formData.password);
+        
+        const response = await axios.post('http://127.0.0.1:8080/login', params);
+        login(response.data.access_token);
+      } else {
+        // Registration uses standard JSON
+        await axios.post('http://127.0.0.1:8080/register', formData);
+        // Auto-switch to login after successful registration
+        setIsLogin(true);
+        alert("Registration successful! Please log in.");
+      }
+    } catch (err) {
+      setError(err.response?.data?.detail || "An error occurred during authentication.");
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-lg border border-slate-200 w-full max-w-md p-8">
+        <div className="flex justify-center mb-6">
+          <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-2xl shadow-sm">M</div>
+        </div>
+        <h2 className="text-2xl font-bold text-center text-slate-800 mb-6">
+          {isLogin ? 'Sign in to Agent OS' : 'Create your account'}
+        </h2>
+        
+        {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm font-medium mb-4 border border-red-100">{error}</div>}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {!isLogin && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">First Name</label>
+                <input required type="text" value={formData.first_name} onChange={e => setFormData({...formData, first_name: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Last Name</label>
+                <input required type="text" value={formData.last_name} onChange={e => setFormData({...formData, last_name: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+              </div>
+            </div>
+          )}
+          
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Email</label>
+            <input required type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+          </div>
+          
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Password</label>
+            <input required type="password" minLength="8" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+          </div>
+
+          {!isLogin && (
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Account Role</label>
+              <select 
+                value={formData.role} 
+                onChange={e => setFormData({...formData, role: e.target.value, invite_code: ''})} 
+                className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white"
+              >
+                <option value="Agent">Real Estate Agent</option>
+                <option value="Broker">Managing Broker</option>
+              </select>
+            </div>
+          )}
+
+          {/* Dynamically show Invite Code input ONLY for Agents registering */}
+          {!isLogin && formData.role === 'Agent' && (
+            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+              <label className="block text-xs font-bold text-blue-800 mb-1">Brokerage Invite Code *</label>
+              <input 
+                required 
+                type="text" 
+                placeholder="e.g. A8X2F9"
+                value={formData.invite_code} 
+                onChange={e => setFormData({...formData, invite_code: e.target.value.toUpperCase()})} 
+                className="w-full px-3 py-2 border border-blue-200 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm uppercase font-mono" 
+              />
+              <p className="text-[10px] text-blue-600 mt-1">Get this code from your Managing Broker.</p>
+            </div>
+          )}
+
+          <button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 text-white py-2.5 rounded-lg font-medium transition-colors shadow-sm mt-2">
+            {isLogin ? 'Sign In' : 'Register'}
+          </button>
+        </form>
+
+        <p className="text-center text-sm text-slate-500 mt-6">
+          {isLogin ? "Don't have an account? " : "Already have an account? "}
+          <button onClick={() => {setIsLogin(!isLogin); setError('');}} className="text-blue-600 hover:underline font-medium">
+            {isLogin ? 'Register here' : 'Sign in here'}
+          </button>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // 1. The Navigation Bar Component
 function Navbar() {
+  const { user, logout } = useAuth();
+
   return (
     <nav className="bg-slate-800 text-white p-4 shadow-md sticky top-0 z-50">
       <div className="max-w-7xl mx-auto flex justify-between items-center">
         <div className="flex items-center space-x-2">
-          {/* A simple placeholder logo */}
-          <div className="w-8 h-8 bg-blue-500 rounded flex items-center justify-center font-bold">M</div>
+          <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold shadow-sm">M</div>
           <h1 className="text-xl font-bold tracking-wider">Agent OS</h1>
         </div>
-        <div className="space-x-8 font-medium">
+        <div className="flex items-center space-x-8 font-medium">
           <Link to="/" className="hover:text-blue-300 transition-colors">Command Center</Link>
           <Link to="/pipeline" className="hover:text-blue-300 transition-colors">Pipeline</Link>
           <Link to="/contacts" className="hover:text-blue-300 transition-colors">Databank</Link>
-          <Link to="/settings" className="hover:text-blue-300 transition-colors">Templates</Link>
+          
+          {user?.role === 'Broker' && (
+            <Link to="/settings" className="hover:text-emerald-400 text-emerald-300 transition-colors flex items-center">
+              <span className="text-xs mr-1">🛡️</span> Templates
+            </Link>
+          )}
+
+          <div className="flex items-center">
+            {/* NEW: The Broker Invite Code Display */}
+            {user?.role === 'Broker' && (
+              <div className="hidden md:flex flex-col items-end mr-6 pr-6 border-r border-slate-600">
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Broker Invite Code</span>
+                <span className="text-sm font-mono font-bold text-emerald-400 tracking-widest select-all">
+                  {user.invite_code}
+                </span>
+              </div>
+            )}
+
+            <button onClick={logout} className="text-sm bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg transition-colors border border-slate-600 font-medium">
+              Log Out
+            </button>
+          </div>
         </div>
       </div>
     </nav>
@@ -32,7 +235,8 @@ function Dashboard() {
   // NEW: Calendar State
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  const AGENT_ID = "7fd135a8-e667-4ae3-ab21-c289e89a3271"; 
+  const { user } = useAuth();
+  const AGENT_ID = user?.id; 
 
   useEffect(() => {
     axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/tasks/`)
@@ -232,7 +436,8 @@ function Pipeline() {
   });
 
   const COLUMNS = ['Lead', 'Contact', 'Appointment', 'Active', 'Under Contract', 'Closed'];
-  const AGENT_ID = "7fd135a8-e667-4ae3-ab21-c289e89a3271"; 
+  const { user } = useAuth();
+  const AGENT_ID = user?.id; 
 
   useEffect(() => {
     const fetchDeals = axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/deals/`);
@@ -424,7 +629,6 @@ function Pipeline() {
 }
 
 // 5. The Contact Profile (Deep Dive) Component
-// 5. The Contact Profile (Deep Dive) Component
 function ContactProfile() {
   const { id } = useParams(); // Grabs the contact_id straight out of the URL
   const [data, setData] = useState(null);
@@ -439,8 +643,8 @@ function ContactProfile() {
   const [allTags, setAllTags] = useState([]);
   const [newTagInput, setNewTagInput] = useState('');
   
-  // YOUR ACTUAL AGENT ID
-  const AGENT_ID = "7fd135a8-e667-4ae3-ab21-c289e89a3271"; 
+  const { user } = useAuth();
+  const AGENT_ID = user?.id; 
 
   useEffect(() => {
     // NEW: Fetch Contact AND Master Tag List simultaneously
@@ -745,7 +949,8 @@ function Contacts() {
     mrea_category: "Haven't Met" 
   });
 
-  const AGENT_ID = "7fd135a8-e667-4ae3-ab21-c289e89a3271"; 
+  const { user } = useAuth();
+  const AGENT_ID = user?.id; 
 
   useEffect(() => {
     // NEW: Fetch both Contacts and Master Tags simultaneously
@@ -961,7 +1166,8 @@ function DealProfile() {
   const [editFormData, setEditFormData] = useState({});
   const [rejectionNotes, setRejectionNotes] = useState({}); // Stores draft notes before saving
 
-  const AGENT_ID = "7fd135a8-e667-4ae3-ab21-c289e89a3271";
+  const { user } = useAuth();
+  const AGENT_ID = user?.id;
 
   useEffect(() => {
     // We fetch the Deal, the Master Templates, AND the cloned Documents all at once
@@ -1393,7 +1599,8 @@ function ComplianceSettings() {
   const [newTemplateType, setNewTemplateType] = useState('Buyer');
   const [newDocName, setNewDocName] = useState('');
 
-  const AGENT_ID = "7fd135a8-e667-4ae3-ab21-c289e89a3271";
+  const { user } = useAuth();
+  const AGENT_ID = user?.id;
 
   // Fetch all templates on load
   const fetchTemplates = () => {
@@ -1575,28 +1782,40 @@ function ComplianceSettings() {
   );
 }
 
-// 5. The Main App Engine
-function App() {
+// 5. The Main App Engine (Upgraded to handle Authentication States)
+function AppContent() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500">Initializing OS...</div>;
+
+  // If not logged in, trap them on the AuthScreen
+  if (!user) return <AuthScreen />;
+
   return (
-    <BrowserRouter>
-      {/* bg-slate-50 provides that subtle off-white professional backdrop */}
-      <div className="min-h-screen bg-slate-50 font-sans text-slate-900"> 
-        <Navbar />
-        
-        {/* max-w-7xl keeps the content from stretching too wide on massive monitors */}
-        <main className="max-w-7xl mx-auto">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/pipeline" element={<Pipeline />} />
-            <Route path="/contacts" element={<Contacts />} />
-            <Route path="/contacts/:id" element={<ContactProfile />} />
-            <Route path="/deals/:id" element={<DealProfile />} />
-            <Route path="/settings" element={<ComplianceSettings />} />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900"> 
+      <Navbar />
+      <main className="max-w-7xl mx-auto">
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/pipeline" element={<Pipeline />} />
+          <Route path="/contacts" element={<Contacts />} />
+          <Route path="/contacts/:id" element={<ContactProfile />} />
+          <Route path="/deals/:id" element={<DealProfile />} />
+          
+          {/* Protect the route directly as a secondary defense */}
+          <Route path="/settings" element={user.role === 'Broker' ? <ComplianceSettings /> : <Navigate to="/" />} />
+        </Routes>
+      </main>
+    </div>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}

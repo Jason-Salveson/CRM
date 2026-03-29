@@ -62,20 +62,23 @@ class UserBase(BaseModel):
     first_name: str = Field(..., max_length=50)
     last_name: str = Field(..., max_length=50)
     email: EmailStr
+    role: Optional[str] = Field(default="Agent", pattern="^(Agent|Broker|Admin)$")
 
 class UserCreate(UserBase):
-    # In a real production app, we would add 'password' here to be hashed later.
-    pass
+    password: str = Field(..., min_length=8) # Require an 8-character password to register
+    invite_code: Optional[str] = None
 
 class UserResponse(UserBase):
     user_id: UUID
+    brokerage_id: Optional[UUID] = None
+    invite_code: Optional[str] = None
     created_at: datetime
-    # We could include contacts here, but it's usually better to fetch them separately 
-    # so we don't load 10,000 contacts every time we just want the user's name.
-
     model_config = ConfigDict(from_attributes=True)
 
-# Add this to the bottom of schemas.py
+# NEW: Schema for the JWT Token we will send to React
+class Token(BaseModel):
+    access_token: str
+    token_type: str
 
 # ==========================================
 # DEAL SCHEMAS (The Pipeline)
