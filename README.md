@@ -124,3 +124,17 @@ It tracks leads from their first contact all the way through broker compliance a
 **Advanced Databank Filtering:**
 * Bulletproofed the React Contacts component with a multi-filter engine.
 * Allows agents to instantly cross-reference text-based searches (Names/Emails) with relational dropdowns (Tags/Categories) to instantly segment their book of business.
+
+### Phase 5 Architecture Summary: Advanced Compliance & Security Hardening
+
+**The Broker Compliance Inbox ("God View"):**
+* Engineered a unified dashboard allowing Managing Brokers to view all `Uploaded` (pending) documents across their entire company.
+* Built an intelligent backend aggregator route that queries deals, agent info, and document statuses in a single optimized payload.
+* Implemented a "Rapid Review" UI, allowing brokers to instantly Approve or Reject documents with inline feedback notes without navigating into individual transaction files.
+
+**Security Hardening (IDOR Prevention):**
+* Identified and patched an Insecure Direct Object Reference (IDOR) vulnerability on the transaction endpoints.
+* Implemented strict backend RBAC logic so a deal can only be fetched if the requesting user is the Owner, an assigned Co-Pilot, or the Managing Broker.
+
+**Frontend Routing & UX Fixes:**
+* Patched a Single Page Application (SPA) "Ghost URL" bug. Engineered the React `AuthProvider` to aggressively intercept logouts, destroy the JWT, and force a React Router redirect to the home path (`/`) to prevent cross-session data leaks.

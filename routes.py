@@ -330,26 +330,39 @@ def get_user_deals(user_id: UUID, db: Session = Depends(get_db)):
         return db.query(models.Deal).filter(models.Deal.user_id == user_id).all()
 
 @router.get("/deals/{deal_id}")
-def get_deal_details(deal_id: UUID, db: Session = Depends(get_db)):
-    # 1. Fetch the specific deal
+def get_deal_details(deal_id: UUID, user_id: UUID, db: Session = Depends(get_db)):
+    # 1. Fetch the deal
     deal = db.query(models.Deal).filter(models.Deal.deal_id == deal_id).first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found.")
-    
-    # 2. Fetch the associated client
+
+    # 2. SECURITY CHECK (The IDOR Patch)
+    requesting_user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not requesting_user:
+        raise HTTPException(status_code=401, detail="Unauthorized request.")
+
+    # A user can only view this deal if they meet one of three criteria:
+    is_owner = deal.user_id == user_id
+    is_partner = any(partner.user_id == user_id for partner in deal.partners)
+    is_broker = requesting_user.role == "Broker" and requesting_user.user_id == deal.owner.brokerage_id
+
+    if not (is_owner or is_partner or is_broker):
+        raise HTTPException(status_code=403, detail="Security Exception: You do not have permission to view this transaction.")
+
+    # 3. Fetch the associated client
     contact = db.query(models.Contact).filter(models.Contact.contact_id == deal.contact_id).first()
     
-    # 3. Fetch all compliance tasks
+    # 4. Fetch all compliance tasks
     tasks = db.query(models.Task).filter(
         models.Task.deal_id == deal_id
     ).order_by(models.Task.due_date.asc()).all()
     
-    # 4. Package the ecosystem into a single JSON payload
+    # 5. Package the ecosystem
     return {
         "deal": deal,
         "contact": contact,
         "tasks": tasks,
-        "partners": deal.partners # <-- NEW PHASE 4 ADDITION
+        "partners": deal.partners
     }
 
 @router.post("/deals/{deal_id}/apply-template/{template_id}", response_model=List[schemas.DealDocumentResponse])
@@ -504,6 +517,41 @@ def update_task_status(task_id: UUID, is_completed: str, db: Session = Depends(g
 # ==========================================
 # COMPLIANCE TEMPLATE ROUTES
 # ==========================================
+@router.get("/users/{user_id}/broker-inbox/")
+def get_broker_inbox(user_id: UUID, db: Session = Depends(get_db)):
+    # 1. Verify this is actually a Managing Broker
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not user or user.role != "Broker":
+        raise HTTPException(status_code=403, detail="Only Managing Brokers can access the compliance inbox.")
+
+    # 2. Find every agent attached to this broker's company
+    team_agents = db.query(models.User.user_id).filter(models.User.brokerage_id == user.user_id).all()
+    team_ids = [agent.user_id for agent in team_agents]
+
+    # 3. Find every deal owned by those agents
+    team_deals = db.query(models.Deal).filter(models.Deal.user_id.in_(team_ids)).all()
+    deal_ids = [deal.deal_id for deal in team_deals]
+
+    # 4. Find all documents strictly waiting for review ("Uploaded")
+    pending_docs = db.query(models.DealDocument).filter(
+        models.DealDocument.deal_id.in_(deal_ids),
+        models.DealDocument.status == "Uploaded"
+    ).all()
+
+    # 5. Package the data so the React frontend has full context
+    inbox = []
+    for doc in pending_docs:
+        deal = next((d for d in team_deals if d.deal_id == doc.deal_id), None)
+        agent = db.query(models.User).filter(models.User.user_id == deal.user_id).first() if deal else None
+        
+        inbox.append({
+            "doc": doc,
+            "deal_name": deal.deal_name if deal else "Unknown Deal",
+            "agent_name": f"{agent.first_name} {agent.last_name}" if agent else "Unknown Agent"
+        })
+
+    return inbox
+
 @router.post(
     "/users/{user_id}/templates/", 
     response_model=schemas.DocumentTemplateResponse, 

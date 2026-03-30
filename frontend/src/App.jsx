@@ -31,13 +31,13 @@ export const useAuth = () => useContext(AuthContext);
 function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate(); // 
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
     if (token) {
       const decoded = parseJwt(token);
       if (decoded && decoded.exp * 1000 > Date.now()) {
-        // UPDATE THIS LINE
         setUser({ id: decoded.sub, role: decoded.role, invite_code: decoded.invite_code });
       } else {
         localStorage.removeItem('access_token');
@@ -49,13 +49,13 @@ function AuthProvider({ children }) {
   const login = (token) => {
     localStorage.setItem('access_token', token);
     const decoded = parseJwt(token);
-    // UPDATE THIS LINE
     setUser({ id: decoded.sub, role: decoded.role, invite_code: decoded.invite_code });
   };
 
   const logout = () => {
     localStorage.removeItem('access_token');
     setUser(null);
+    navigate('/'); 
   };
 
   return (
@@ -202,9 +202,14 @@ function Navbar() {
           <Link to="/profile" className="hover:text-blue-300 transition-colors">Profile</Link>
           
           {user?.role === 'Broker' && (
-            <Link to="/settings" className="hover:text-emerald-400 text-emerald-300 transition-colors flex items-center">
-              <span className="text-xs mr-1">🛡️</span> Templates
-            </Link>
+            <>
+              <Link to="/inbox" className="hover:text-blue-300 text-blue-200 transition-colors flex items-center">
+                <span className="text-xs mr-1">📥</span> Inbox
+              </Link>
+              <Link to="/settings" className="hover:text-emerald-400 text-emerald-300 transition-colors flex items-center">
+                <span className="text-xs mr-1">🛡️</span> Templates
+              </Link>
+            </>
           )}
 
           <div className="flex items-center">
@@ -1309,10 +1314,10 @@ function DealProfile() {
   const AGENT_ID = user?.id;
 
   useEffect(() => {
-    const fetchDeal = axios.get(`http://127.0.0.1:8080/deals/${id}`);
+    // SECURITY UPDATE: Pass the AGENT_ID so the backend can verify permissions
+    const fetchDeal = axios.get(`http://127.0.0.1:8080/deals/${id}?user_id=${AGENT_ID}`);
     const fetchTemplates = axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/templates/`);
     const fetchDocs = axios.get(`http://127.0.0.1:8080/deals/${id}/documents/`);
-    // Fetch the team roster so we can select agents to partner with
     const fetchRoster = axios.get(`http://127.0.0.1:8080/users/${AGENT_ID}/roster/`);
 
     Promise.all([fetchDeal, fetchTemplates, fetchDocs, fetchRoster])
@@ -1798,6 +1803,137 @@ function DealProfile() {
   );
 }
 
+// ==========================================
+// BROKER COMPLIANCE INBOX (PHASE 5)
+// ==========================================
+function BrokerInbox() {
+  const { user } = useAuth();
+  const [inboxItems, setInboxItems] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // State for the inline rejection note
+  const [rejectingDocId, setRejectingDocId] = useState(null);
+  const [rejectionNote, setRejectionNote] = useState("");
+
+  useEffect(() => {
+    axios.get(`http://127.0.0.1:8080/users/${user.id}/broker-inbox/`)
+      .then(res => {
+        setInboxItems(res.data);
+        setIsLoading(false);
+      })
+      .catch(err => {
+        console.error("Error fetching inbox:", err);
+        setIsLoading(false);
+      });
+  }, [user.id]);
+
+  const handleReviewDoc = (docId, newStatus) => {
+    const payload = { new_status: newStatus };
+    if (newStatus === "Rejected") {
+      if (!rejectionNote.trim()) return alert("Please provide a reason for rejection.");
+      payload.reviewer_notes = rejectionNote;
+    }
+
+    axios.patch(`http://127.0.0.1:8080/deal-documents/${docId}/status`, payload)
+      .then(() => {
+        // Optimistically remove the document from the inbox once reviewed
+        setInboxItems(current => current.filter(item => item.doc.doc_id !== docId));
+        setRejectingDocId(null);
+        setRejectionNote("");
+      })
+      .catch(error => console.error("Error updating document:", error));
+  };
+
+  if (isLoading) return <div className="p-8 text-slate-500 animate-pulse">Loading Inbox...</div>;
+
+  return (
+    <div className="p-8 max-w-7xl mx-auto">
+      <div className="mb-8">
+        <h2 className="text-3xl font-bold text-slate-800">Compliance Inbox</h2>
+        <p className="text-slate-500 mt-1">Review pending documents uploaded by your agents.</p>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+          <h3 className="font-bold text-slate-800 text-sm">Action Required</h3>
+          <span className="text-xs font-bold text-slate-500 bg-white px-2 py-1 border border-slate-200 rounded-md">
+            {inboxItems.length} Pending
+          </span>
+        </div>
+
+        <div className="divide-y divide-slate-100">
+          {inboxItems.length === 0 ? (
+            <div className="p-12 text-center text-slate-500">
+              <span className="text-4xl block mb-3">🎉</span>
+              <p className="font-medium text-lg text-emerald-600">Inbox Zero!</p>
+              <p className="text-sm">All agent documents have been reviewed.</p>
+            </div>
+          ) : (
+            inboxItems.map((item) => (
+              <div key={item.doc.doc_id} className="p-6 transition-colors hover:bg-slate-50">
+                <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
+                  
+                  {/* Left Side: Context */}
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-[10px] font-bold uppercase rounded tracking-wider">
+                        {item.agent_name}
+                      </span>
+                      <p className="font-bold text-slate-800 text-sm">{item.deal_name}</p>
+                    </div>
+                    <h4 className="text-lg font-bold text-slate-800">{item.doc.document_name}</h4>
+                    {item.doc.file_url ? (
+                      <a href={item.doc.file_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center mt-3 text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-lg">
+                        📄 View PDF Document
+                      </a>
+                    ) : (
+                      <p className="text-xs text-red-500 mt-2 italic">Error: File URL missing.</p>
+                    )}
+                  </div>
+
+                  {/* Right Side: The Rapid Action Panel */}
+                  <div className="w-full md:w-80">
+                    {rejectingDocId === item.doc.doc_id ? (
+                      <div className="bg-red-50 p-4 rounded-lg border border-red-100 animate-in fade-in slide-in-from-top-2">
+                        <label className="block text-xs font-bold text-red-800 mb-2 uppercase tracking-wider">MCA Rejection Note</label>
+                        <textarea 
+                          autoFocus
+                          value={rejectionNote}
+                          onChange={(e) => setRejectionNote(e.target.value)}
+                          placeholder="Why is this document being rejected?"
+                          className="w-full px-3 py-2 border border-red-200 rounded text-sm focus:ring-2 focus:ring-red-500 outline-none resize-none h-20 mb-3 bg-white"
+                        />
+                        <div className="flex space-x-2">
+                          <button onClick={() => setRejectingDocId(null)} className="flex-1 px-3 py-2 bg-white border border-slate-300 text-slate-600 rounded text-sm font-medium hover:bg-slate-50 transition-colors">
+                            Cancel
+                          </button>
+                          <button onClick={() => handleReviewDoc(item.doc.doc_id, "Rejected")} className="flex-1 px-3 py-2 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-700 transition-colors shadow-sm">
+                            Confirm Reject
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-row md:flex-col gap-2">
+                        <button onClick={() => handleReviewDoc(item.doc.doc_id, "Approved")} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-lg text-sm font-bold transition-colors shadow-sm">
+                          ✓ Approve Document
+                        </button>
+                        <button onClick={() => setRejectingDocId(item.doc.doc_id)} className="flex-1 bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300 px-4 py-3 rounded-lg text-sm font-bold transition-colors">
+                          ✗ Reject Document
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // 7. The Compliance Settings Component (Phase 2 Master Templates)
 function ComplianceSettings() {
   const [templates, setTemplates] = useState([]);
@@ -2014,6 +2150,7 @@ function AppContent() {
           <Route path="/profile" element={<AgentProfile />} />
           
           {/* Protect the route directly as a secondary defense */}
+          <Route path="/inbox" element={user.role === 'Broker' ? <BrokerInbox /> : <Navigate to="/" />} />
           <Route path="/settings" element={user.role === 'Broker' ? <ComplianceSettings /> : <Navigate to="/" />} />
         </Routes>
       </main>
